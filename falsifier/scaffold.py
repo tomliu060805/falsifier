@@ -415,7 +415,10 @@ def create(path: str, name: Optional[str] = None, force: bool = False) -> Path:
 
     (root / "README.md").write_text(README_MD.format(name=name), encoding="utf-8")
     (root / "docs" / "STATUS.md").write_text(STATUS_MD.format(name=name), encoding="utf-8")
-    (root / "requirements.txt").write_text("numpy>=1.22\\npandas>=1.5\\nscipy>=1.9\\n", encoding="utf-8")
+    (root / "requirements.txt").write_text(
+        "numpy>=1.22\\npandas>=1.5\\nscipy>=1.9\\nfalsifier\\n"
+        "# matplotlib only if this study draws anything:\\n# falsifier[charts]\\n",
+        encoding="utf-8")
     (root / ".gitignore").write_text("data/\\noutput/\\nlogs/\\n__pycache__/\\n*.py[cod]\\n", encoding="utf-8")
 
     pre = root / "config" / "prereg.json"

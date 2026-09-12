@@ -505,7 +505,20 @@ means only that a badly specified study was not falsified.
 ## Install
 
 ```bash
-pip install -e .          # numpy, pandas, scipy
+pip install git+https://github.com/tomliu060805/falsifier.git
+pip install "falsifier[charts] @ git+https://github.com/tomliu060805/falsifier.git"   # + matplotlib
+```
+
+Requires numpy, pandas and scipy, and is tested against both numpy 1.26 and
+2.2. `matplotlib` is an extra rather than a dependency, because the checks
+themselves draw nothing — that was an undeclared import until a clean-room
+install found it, which is the argument for doing clean-room installs.
+
+To verify the copy you just installed:
+
+```bash
+pytest -q -m "not slow"        # 42 checks of the referee itself
+python examples/selfcheck.py   # 30 targets, verdict and cause of death
 ```
 
 MIT.

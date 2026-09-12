@@ -41,7 +41,13 @@ def _find_cjk_fonts():
 
 
 def _prepare(texts: Sequence[str]):
-    import matplotlib
+    try:
+        import matplotlib
+    except ImportError as exc:                       # pragma: no cover - install path
+        raise ImportError(
+            "drawing needs matplotlib, which is an optional extra here because the "
+            "checks themselves draw nothing: pip install 'falsifier[charts]'"
+        ) from exc
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib import font_manager as fm

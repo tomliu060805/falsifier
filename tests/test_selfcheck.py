@@ -608,6 +608,7 @@ def test_i2_rejects_an_increment_a_coin_would_match():
 
 
 def test_chart_writes_a_png_and_refuses_tofu(tmp_path):
+    pytest.importorskip("matplotlib", reason="charts are an optional extra")
     inc = _inc_fixture("real")
     out = F.plot_increment(inc, str(tmp_path / "inc.png"), title="English title")
     assert Path(out).exists() and Path(out).stat().st_size > 10_000

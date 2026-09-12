@@ -13,6 +13,13 @@ authors = [{ name = "tomliu060805" }]
 keywords = ["quantitative-finance", "research-methodology", "null-baseline", "point-in-time", "falsification", "backtest-overfitting"]
 dependencies = ["numpy>=1.22", "pandas>=1.5", "scipy>=1.9"]
 
+# matplotlib is needed only by falsifier.charts, so it is an extra rather than a
+# hard dependency -- the verdicts and the checks do not draw anything. It was an
+# undeclared import until a clean-environment install found it.
+[project.optional-dependencies]
+charts = ["matplotlib>=3.5"]
+dev = ["pytest>=7.0", "matplotlib>=3.5"]
+
 [project.urls]
 Homepage = "https://github.com/tomliu060805/falsifier"
 
