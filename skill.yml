@@ -1,0 +1,9 @@
+name: falsify
+version: 0.1.0
+summary: Adversarial referee for quantitative research claims (process / point-in-time / mechanism / economics).
+entrypoint: SKILL.md
+language: python
+requires:
+  - numpy>=1.22
+  - pandas>=1.5
+  - scipy>=1.9

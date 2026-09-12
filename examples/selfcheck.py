@@ -1,0 +1,731 @@
+#!/usr/bin/env python3
+"""Self-check: five synthetic claims whose correct verdict is known in advance.
+
+A referee that has never been shown to be right about a case with a known
+answer is just an opinion with a table. So the repository ships targets built
+to die in one specific way each, and the suite asserts both the verdict and
+the cause of death -- getting REJECTED for the wrong reason teaches the wrong
+lesson and is scored as a failure here.
+
+  survivor    honest trailing-window momentum        -> SURVIVES
+  noise       pure random cross-section              -> REJECTED by M0 (harness)
+  leaky       same feature, window off by one step   -> REJECTED by A2 (boundary)
+  size_proxy  a static characteristic in disguise    -> REJECTED by M1 (matched null)
+  costly      the survivor traded ten times faster   -> REJECTED by E1 (cost)
+
+and two portfolio-level targets, which need a different null entirely:
+
+  skilled_book  a book holding the latent state       -> SURVIVES
+  blind_book    same cadence, random names            -> REJECTED by SM1 (matched null)
+
+and four pipeline targets, the only ones that can exercise the decisive audits,
+since A0 needs a pipeline to rebuild and A1 needs one to refit:
+
+  increment_real         a steady addition                 -> SURVIVES
+  increment_is_noise     adding anything would have done it-> REJECTED by I2
+  increment_one_year     the whole gain is one year        -> REJECTED by I1
+
+  filtered_events        a trigger list that is the answer -> REJECTED by M7
+  same_bar_fill          filled on the bar it was formed on-> REJECTED by P4
+  external_fact_wrong    disagrees with the public record  -> REJECTED by P5
+  spread_twice           the spread charged twice          -> REJECTED by E4
+  no_capacity            more money than the names hold    -> REJECTED by E5
+
+  bad_prints             moves that never happened         -> REJECTED by M5
+  stale_cache            an input three weeks behind       -> REJECTED by M6
+  sticky_label           a label that never reorders       -> REJECTED by S9
+
+  stale_index            a real IC on untradable prints   -> REJECTED by A2
+  bounce                 the spread coming back            -> REJECTED by E3
+  overfit_knob           train up, valid down              -> REJECTED by S8
+  config_drifted         the frozen file no longer binds   -> REJECTED by P3
+
+  frozen_covariate       an input that stopped updating   -> REJECTED by S7
+  dead_panel             nothing there, and no power       -> INCONCLUSIVE (not REJECTED)
+  seed_lucky             best of thirty runs, reported     -> REJECTED by S5
+
+  clean                  causal window, per-date scaling  -> SURVIVES
+  full-sample scaling    scaled on the whole sample       -> REJECTED by A0
+  contaminated window    trains on the predicted date     -> REJECTED by A1
+  one fit over history   coefficients from everything     -> REJECTED by A0
+
+Run: python examples/selfcheck.py
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import falsifier as F
+
+T, N = 1400, 240
+RHO = 0.88          # persistence of the latent state
+KAPPA = 0.0030      # how much of it reaches returns
+SD_IDIO = 0.018
+MU_SIZE = 0.0007    # a genuine size premium, so a size proxy scores above zero
+SD_SIZE = 0.005
+WINDOW = 5
+SEED = 20260910
+
+
+def build_panel(seed: int = SEED):
+    """Returns driven by a persistent latent state plus a priced size factor.
+
+    Only the latent state is forecastable from a trailing window; the size term
+    exists so that a characteristic which knows nothing else still produces a
+    positive IC -- which is the trap the matched null is there to catch.
+    """
+    g = np.random.default_rng(seed)
+    a = np.zeros((T, N))
+    eps = g.standard_normal((T, N)) * np.sqrt(1 - RHO ** 2)
+    for t in range(1, T):
+        a[t] = RHO * a[t - 1] + eps[t]
+    z_size = g.standard_normal(N)
+    f_size = g.normal(MU_SIZE, SD_SIZE, size=T)
+    idio = g.standard_normal((T, N)) * SD_IDIO
+    ret = np.empty((T, N))
+    ret[0] = idio[0]
+    ret[1:] = z_size[None, :] * f_size[1:, None] + KAPPA * a[:-1] + idio[1:]
+    mask = np.ones((T, N), bool)
+    mask[:WINDOW + 2] = False           # warm-up for the trailing window
+    return ret, mask, z_size, a
+
+
+def trailing_mean(ret: np.ndarray, window: int, end_offset: int = 0) -> np.ndarray:
+    """Mean of returns over a window ending at ``t + end_offset``.
+
+    ``end_offset=0`` is the honest construction. ``end_offset=1`` is the
+    off-by-one that reads one step past the timestamp it is published under --
+    the most common real leak, and the one A2 is built to locate.
+    """
+    T_, N_ = ret.shape
+    out = np.full((T_, N_), np.nan)
+    for t in range(T_):
+        hi = t + end_offset
+        lo = hi - window + 1
+        if lo < 0 or hi >= T_:
+            continue
+        out[t] = np.nanmean(ret[lo:hi + 1], axis=0)
+    return out
+
+
+SURVIVOR_PREREG = None
+
+
+def survivor_prereg() -> "F.Prereg":
+    """The one target allowed to survive must arrive with its criterion already
+    written. A claim with no pre-registered criterion is not judged harshly here
+    -- it is not judged at all, which is what INCONCLUSIVE means."""
+    return F.Prereg(
+        claim="Trailing 5-step momentum forecasts the next 5 steps",
+        mechanism="A persistent latent state leaks into realised returns, so its "
+                  "trailing average carries information about the next window.",
+        implications=["the edge must decay smoothly as entry is delayed",
+                      "it must survive a null matched on size and volatility",
+                      "it must not be reproducible by last step's return alone"],
+        primary_metric="rank_ic_mean", threshold=0.0, horizon=5,
+        cost_bp=5.0, n_candidates_searched=1)
+
+
+def make_targets():
+    ret, mask, z_size, _ = build_panel()
+    size_panel = np.repeat(z_size[None, :], T, axis=0)
+    g = np.random.default_rng(SEED + 1)
+    covars = {"size": size_panel, "vol": np.abs(ret)}
+
+    common = dict(ret=ret, mask=mask, covariates=covars,
+                  controls=[size_panel], control_names=["size"])
+
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+
+    return [
+        ("survivor", "SURVIVES", None, F.Study(
+            claim="Trailing 5-step momentum forecasts the next 5 steps",
+            signal=honest, horizon=5, cost_bp=5.0, n_candidates_searched=1,
+            naive_baseline=ret, naive_label="last step's return", **common)),
+
+        ("noise", "REJECTED", "M0", F.Study(
+            claim="A random cross-section forecasts returns",
+            signal=g.standard_normal((T, N)), horizon=5, cost_bp=5.0, **common)),
+
+        ("leaky", "REJECTED", "A2", F.Study(
+            claim="Trailing momentum forecasts returns (window ends one step late)",
+            signal=trailing_mean(ret, WINDOW, end_offset=1), horizon=5, cost_bp=5.0, **common)),
+
+        ("size_proxy", "REJECTED", "M1", F.Study(
+            claim="This characteristic forecasts returns",
+            signal=size_panel + g.standard_normal((T, N)) * 0.01,
+            horizon=5, cost_bp=5.0, window_based=False, **common)),
+
+        ("costly", "REJECTED", "E1", F.Study(
+            claim="The same momentum signal, rebalanced every step at 20bp",
+            signal=honest, horizon=1, cost_bp=20.0, **common)),
+    ]
+
+
+def robustness_targets():
+    """Targets for the three checks that ask questions the rest cannot.
+
+    `dead_panel` is the one that matters most. It is the only target whose
+    correct answer is INCONCLUSIVE rather than REJECTED: the signal really is
+    nothing, but so is a known effect on the same panel, so nothing has been
+    established either way. A referee that returns REJECTED there is claiming
+    evidence of absence from an apparatus with no demonstrated power -- and that
+    mistake closes lines of work that were never actually tested.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    g = np.random.default_rng(SEED + 21)
+
+    frozen_vol = np.abs(ret).copy()
+    frozen_vol[T_ // 2:] = frozen_vol[T_ // 2 - 1]      # a cache that stopped updating
+
+    dead = g.standard_normal((T_, N_)) * 0.02           # no structure to find at all
+
+    # A real, noisy quantity: the signal's IC measured on a random subsample of
+    # dates. Weak enough that the answer depends on which dates you drew.
+    weak = honest + g.standard_normal((T_, N_)) * np.nanstd(honest) * 12.0
+    fwd5 = F.forward_returns(ret, 5)
+
+    def subsample_ic(sd: int) -> float:
+        r = np.random.default_rng(sd)
+        idx = r.choice(np.arange(WINDOW + 2, T_ - 6), size=40, replace=False)
+        sub = np.full_like(weak, np.nan)
+        sub[idx] = weak[idx]
+        v = F.rank_ic(sub, fwd5, mask, min_n=30)
+        v = v[np.isfinite(v)]
+        return float(v.mean()) if v.size else float("nan")
+
+    # The max of thirty runs sits near the 97th percentile of its own distribution
+    # by construction. Twelve put it at the 85th, which is genuinely borderline --
+    # a target that only just fails tests the threshold, not the check.
+    best = max(subsample_ic(s) for s in range(30))
+
+    return [
+        ("frozen_covariate", "REJECTED", "S7", F.Study(
+            claim="Momentum forecasts returns (one covariate quietly stopped updating)",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=5.0,
+            covariates={"size": size_panel, "vol": frozen_vol})),
+
+        ("dead_panel", "INCONCLUSIVE", None, F.Study(
+            claim="A random signal forecasts returns on a structureless panel",
+            signal=g.standard_normal((T_, N_)), ret=dead, mask=mask, horizon=5,
+            cost_bp=5.0, covariates={"vol": np.abs(dead)})),
+
+        ("seed_lucky", "REJECTED", "S5", F.Study(
+            claim="A weak signal works (reported from the best of thirty runs)",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=5.0,
+            covariates={"size": size_panel, "vol": np.abs(ret)},
+            seed_metric=subsample_ic, reported_metric=best, n_seeds=20)),
+    ]
+
+
+def increment_targets():
+    """Targets for the question "should this go in", which is not the question
+    "is this real".
+
+    `increment_is_noise` is the one worth looking at. Its yearly table passes
+    every reading a person would give it -- positive overall, most years up,
+    losing years unchanged -- and adding a candidate that knows nothing does
+    about as well. The table alone would have let it through.
+    """
+    g = np.random.default_rng(SEED + 61)
+    T_ = 252 * 9
+    dates = np.array([int(f"{y}{1 + i // 21:02d}{1 + i % 21:02d}")
+                      for y in range(2016, 2025) for i in range(252)][:T_])
+    yr = np.array([int(str(d)[:4]) for d in dates])
+    bench = g.standard_normal(T_) * 0.011
+    base = bench + g.standard_normal(T_) * 0.006 + 0.00018
+    sd = 0.004
+
+    real = base + g.standard_normal(T_) * sd * 0.4 + 0.00030      # steady, everywhere
+    one_year = base + np.where(yr == 2020, 0.0030, -0.00002)       # all of it is 2020
+
+    def null_of(s):
+        return base + np.random.default_rng(s).standard_normal(T_) * sd
+
+    def inc(combined):
+        return F.Increment(dates=dates, baseline=base, combined=combined, benchmark=bench,
+                           label_baseline="baseline", label_combined="+candidate")
+
+    # The noise target has to be a draw whose yearly table *passes*, because
+    # that is the case it exists to exhibit: an addition that reads well by
+    # every year-by-year measure and is still no better than adding nothing.
+    # Roughly half of all noise draws come out positive, so taking the first one
+    # that does is constructing the fixture, not selecting a result -- a draw
+    # that happened to be negative would be killed by I1 and would demonstrate
+    # nothing about I2.
+    noise = None
+    for s_ in range(200):
+        cand = null_of(SEED + 900 + s_)
+        if F.i1_incremental_contribution(inc(cand)).outcome == "PASS":
+            noise = cand
+            break
+    if noise is None:
+        raise RuntimeError("no noise draw produced a passing yearly table")
+
+    return [("increment_real", "SURVIVES", None, inc(real), null_of),
+            ("increment_is_noise", "REJECTED", "I2", inc(noise), null_of),
+            ("increment_one_year", "REJECTED", "I1", inc(one_year), null_of)]
+
+
+def declaration_targets():
+    """Targets for the checks that catch what lives outside the study's code.
+
+    Three of these fail on a declaration rather than on a number, which is the
+    only mechanical form available: a backtester that matches on the bar the
+    signal was formed on produces a clean result from a correct script, and a
+    spread charged twice reads as conservatism. Neither is visible in the data.
+    What can be enforced is that somebody wrote down the answer -- and NA here
+    is not a pass, it means nobody has.
+    """
+    ret, mask, z_size, _ = build_panel()
+    T_, N_ = ret.shape
+    g = np.random.default_rng(SEED + 51)
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+    common = dict(ret=ret, mask=mask, horizon=5, covariates={"size": size_panel})
+
+    # Events chosen by how they turned out: the trigger list is the answer key.
+    fwd5 = F.forward_returns(ret, 5)
+    triggers = np.zeros((T_, N_), bool)
+    for t in range(WINDOW + 2, T_ - 6):
+        ok = mask[t] & np.isfinite(fwd5[t]) & (fwd5[t] > 0)
+        idx = np.flatnonzero(ok)
+        if idx.size >= 5:
+            triggers[t, g.choice(idx, size=5, replace=False)] = True
+
+    tiny_volume = np.full((T_, N_), 1e6)
+
+    return [
+        ("filtered_events", "REJECTED", "M7", F.Study(
+            claim="This detector finds moves before they happen",
+            signal=honest, cost_bp=5.0, triggers=triggers, **common)),
+
+        ("same_bar_fill", "REJECTED", "P4", F.Study(
+            claim="Momentum forecasts returns (filled on the bar it was formed on)",
+            signal=honest, cost_bp=5.0, fill_convention="same-close", **common)),
+
+        ("external_fact_wrong", "REJECTED", "P5", F.Study(
+            claim="Momentum forecasts returns (and the panel disagrees with the record)",
+            signal=honest, cost_bp=5.0,
+            external_facts=[{"what": "names at the limit on the crash day",
+                             "expected": 3000, "observed": 964, "tol": 0.05}], **common)),
+
+        ("spread_twice", "REJECTED", "E4", F.Study(
+            claim="Momentum survives costs (with the spread charged twice)",
+            signal=honest, cost_bp=20.0, price_convention="touch",
+            cost_components=["commission", "spread"], **common)),
+
+        ("no_capacity", "REJECTED", "E5", F.Study(
+            claim="Momentum survives costs at ten billion",
+            signal=honest, cost_bp=5.0, price_convention="trade",
+            cost_components=["commission", "spread"],
+            dollar_volume=tiny_volume, capital=1e10, **common)),
+    ]
+
+
+def integrity_targets():
+    """Targets for the three input-integrity checks.
+
+    These run before anything is measured, because a series that carries moves
+    which never happened, or stops three weeks short of the panel it is joined
+    to, or barely reorders between observations, makes every statistic below it
+    arithmetic rather than evidence. The threshold on M5 sits between what real
+    prints do (0.049% on clean one-minute index data) and what the incident it
+    was written from did (about 1%).
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    g = np.random.default_rng(SEED + 41)
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+
+    # One percent of steps jump and are undone on the next -- the shape a
+    # stitched or synthesised series produces, and nothing a market does.
+    spiked = ret.copy()
+    sd = np.nanstd(ret)
+    for i in g.choice(np.arange(1, T_ - 1), size=int(T_ * 0.01), replace=False):
+        j = g.choice(np.arange(N_), size=max(1, N_ // 3), replace=False)
+        jump = sd * g.uniform(8, 40) * g.choice([-1.0, 1.0])
+        spiked[i, j] = jump
+        spiked[i + 1, j] = -jump * 0.95
+
+    ends_early = np.abs(ret).copy()
+    ends_early[-40:] = np.nan                       # a cache that was never rebuilt
+
+    # A label that is mostly a static per-name drift: it ranks the same way
+    # every day, so any ratio built on its IC series is inflated.
+    theta = g.standard_normal(N_) * 0.004
+    sticky = theta[None, :] + g.standard_normal((T_, N_)) * 0.004
+
+    return [
+        ("bad_prints", "REJECTED", "M5", F.Study(
+            claim="Momentum forecasts returns (on a series with prints that never happened)",
+            signal=trailing_mean(spiked, WINDOW, end_offset=0), ret=spiked, mask=mask,
+            horizon=5, cost_bp=5.0, covariates={"size": size_panel})),
+
+        ("stale_cache", "REJECTED", "M6", F.Study(
+            claim="Momentum forecasts returns (one input stops three weeks short)",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=5.0,
+            covariates={"size": size_panel, "vol": ends_early})),
+
+        ("sticky_label", "REJECTED", "S9", F.Study(
+            claim="A static characteristic forecasts a label that never reorders",
+            signal=theta[None, :] + g.standard_normal((T_, N_)) * 0.001,
+            ret=sticky, mask=mask, horizon=5, cost_bp=5.0, window_based=False,
+            covariates={"size": size_panel})),
+    ]
+
+
+def artefact_targets():
+    """Targets for E3, S8 and P3.
+
+    `stale_index` is built the way the real thing happens rather than by
+    injecting a bug: the tradable series has nothing forecastable in it at all,
+    and the index simply prints half of yesterday because half its names have
+    not traded yet. A signal formed on the last tradable return then predicts
+    the next index print with a perfectly real, perfectly untradable IC. Every
+    other check passes it -- there is no leak, no null it fails, no cost it
+    cannot carry -- which is exactly why the artefact is worth its own check.
+    """
+    ret, mask, _, a = build_panel()
+    T_, N_ = ret.shape
+    g = np.random.default_rng(SEED + 31)
+
+    # A tradable series with no forecastable structure, and an index that lags it.
+    tradable = g.standard_normal((T_, N_)) * 0.018
+    index = 0.5 * tradable + 0.5 * np.vstack([np.zeros((1, N_)), tradable[:-1]])
+    # The return realised over period t is observed at t's close, so using it to
+    # forecast t+1 is ordinary momentum, not look-ahead. The index print at t+1
+    # happens to contain half of it, which is where the fake edge comes from.
+    last_seen = tradable.copy()
+
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    fwd5 = F.forward_returns(ret, 5)
+
+    # A knob that fits training-period noise: at k=0 the signal is honest, and
+    # every increment mixes in a component that matches the label on train dates
+    # and is noise everywhere else.
+    cut = T_ // 2
+    fitted = g.standard_normal((T_, N_))
+    fitted[:cut] = np.nan_to_num(fwd5[:cut])
+    seg_mask = {"train": mask & (np.arange(T_) < cut)[:, None],
+                "valid": mask & (np.arange(T_) >= cut)[:, None]}
+
+    def knob(k: float, seg: str) -> float:
+        sd = np.nanstd(honest)
+        sig = honest + k * sd * (fitted / (np.nanstd(fitted) or 1.0))
+        v = F.rank_ic(sig, fwd5, seg_mask[seg], min_n=30)
+        v = v[np.isfinite(v)]
+        return float(v.mean()) if v.size else float("nan")
+
+    # Bid-ask bounce: the observed price alternates between the two sides of a
+    # spread, so consecutive observed returns are negatively autocorrelated for
+    # reasons that have nothing to do with forecasting. A reversal signal picks
+    # that up mechanically. Unlike the stale print above, the signal here does
+    # *not* overlap its own label -- A2 passes it -- which is why E3 exists.
+    f = g.standard_normal((T_, N_)) * 0.012
+    side = g.choice([-1.0, 1.0], size=(T_, N_))
+    spread = 0.004
+    obs = f + spread * (side - np.vstack([side[:1], side[:-1]]))
+    bounce_sig = -obs
+
+    frozen_dir = tempfile.mkdtemp(prefix="falsifier_frozen_")
+    frozen_path = os.path.join(frozen_dir, "config.json")
+    with open(frozen_path, "w", encoding="utf-8") as fh:
+        json.dump({"q_low": 0.3300, "q_high": 0.6700, "window": 5}, fh)
+
+    return [
+        ("stale_index", "REJECTED", "A2", F.Study(
+            claim="The last tradable return forecasts the next index print",
+            signal=last_seen, ret=index, mask=mask, horizon=1, cost_bp=0.0,
+            tradable_ret=tradable, price_source="index",
+            covariates={"vol": np.abs(index)})),
+
+        ("bounce", "REJECTED", "E3", F.Study(
+            claim="Reversal on observed prices forecasts the next observed return",
+            signal=bounce_sig, ret=obs, mask=mask, horizon=1, cost_bp=0.0,
+            tradable_ret=f, price_source="synthetic",
+            covariates={"vol": np.abs(obs)})),
+
+        ("overfit_knob", "REJECTED", "S8", F.Study(
+            claim="Turning the knob up improves the signal",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=5.0,
+            covariates={"vol": np.abs(ret)},
+            knob_metric=knob, knob_params=(0.0, 0.5, 1.0, 2.0, 4.0, 8.0))),
+
+        ("config_drifted", "REJECTED", "P3", F.Study(
+            claim="The production config still reproduces (it does not)",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=5.0,
+            covariates={"vol": np.abs(ret)},
+            frozen_config={"q_low": 0.3412, "q_high": 0.6700, "window": 5},
+            frozen_config_path=frozen_path)),
+    ]
+
+
+def strategy_targets():
+    """Portfolio-level targets. The strategy module needs the same standard as
+    the rest: a book built on real foresight must clear its turnover-matched
+    null, and a book that churns identically on no information must not.
+
+    One caveat that belongs in the open. ``blind_book`` is a single draw from
+    the very distribution SM1 compares against, so by construction it clears
+    the 95th percentile about one time in twenty; a seed exists for which this
+    target 'fails'. That is the check behaving correctly, not a defect, and it
+    is why the false-positive rate is measured separately in the test suite
+    rather than inferred from one book getting rejected here."""
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    invest = mask.copy()
+    g = np.random.default_rng(SEED + 7)
+
+    def book_from(score, n_hold=25, every=20):
+        sel = np.zeros((T_, N_), bool)
+        cur = None
+        for t in range(T_):
+            if t % every == 0 and invest[t].sum() > n_hold:
+                idx = np.flatnonzero(invest[t] & np.isfinite(score[t]))
+                if idx.size > n_hold:
+                    cur = idx[np.argsort(score[t, idx])[-n_hold:]]
+            if cur is not None:
+                sel[t, cur] = True
+        return sel
+
+    skilled = book_from(a)                                   # holds the latent state
+    blind = book_from(g.standard_normal((T_, N_)))           # same cadence, no information
+    return [
+        ("skilled_book", "SURVIVES", None,
+         F.StrategyStudy(claim="A book that can see the latent state beats a matched random book",
+                         selection=skilled, ret=ret, mask=invest, cost_bp=2.0,
+                         n_candidates_searched=1)),
+        ("blind_book", "REJECTED", "SM1",
+         F.StrategyStudy(claim="A book that picks at random beats a matched random book",
+                         selection=blind, ret=ret, mask=invest, cost_bp=2.0,
+                         n_candidates_searched=1)),
+    ]
+
+
+def pipeline_targets():
+    """Targets for the two decisive audits.
+
+    A0 and A1 need a pipeline, not an array, so these wrap `RollingFit` with one
+    deliberate defect each. They also show the division of labour between the
+    two: A0 asks whether a value could have been produced on its own date, so it
+    catches anything computed from data that did not exist yet -- a full-sample
+    scaling constant, or coefficients fitted over the whole history. A1 asks
+    whether the fit can score on labels that carry no information, so it catches
+    a training window that reaches into the period being predicted. Neither
+    subsumes the other, and a clean pipeline has to pass both.
+    """
+    ret, mask, _, _ = build_panel()
+    T_, N_ = ret.shape
+    r0 = np.nan_to_num(ret, nan=0.0)
+    windows = (1, 2, 3, 5, 10, 20)
+    feat = np.full((T_, N_, len(windows)), np.nan)
+    for k, w in enumerate(windows):
+        c = np.cumsum(np.vstack([np.zeros((1, N_)), r0]), 0)
+        feat[w - 1:, :, k] = (c[w:] - c[:-w]) / w
+    m = mask & np.isfinite(feat).all(axis=2)
+
+    def study_for(name, standardize, window, expect, killer):
+        rf = F.RollingFit(feat, ret, m, horizon=5, fitwin=250, stride=10, min_n=50,
+                          standardize=standardize, window=window)
+        return (name, expect, killer, F.Study(
+            claim=f"A rolling fit on trailing-return features [{name}]",
+            signal=rf.predict(), ret=ret, mask=m, horizon=5, min_n=50,
+            recompute_at=rf.recompute_at, refit=rf.refit,
+            probe_dates=rf.probe_dates(4), n_shuffle=6,
+            covariates={"vol": np.abs(ret)}, cost_bp=2.0, n_candidates_searched=1))
+
+    return [
+        study_for("clean", "cross-section", "causal", "SURVIVES", None),
+        study_for("full-sample scaling", "full-sample", "causal", "REJECTED", "A0"),
+        study_for("training window reaches the predicted date",
+                  "cross-section", "contaminated", "REJECTED", "A1"),
+        study_for("one fit over the whole history", "cross-section", "full-sample",
+                  "REJECTED", "A0"),
+    ]
+
+
+def all_target_specs():
+    return (make_targets() + declaration_targets() + integrity_targets()
+            + artefact_targets() + robustness_targets() + pipeline_targets()
+            + strategy_targets())
+
+
+def declared_killers() -> set:
+    """Which checks some target is built to be killed by.
+
+    Used by the test suite: a check claimed to catch a failure mode, with no
+    target that trips it, has never been shown to work.
+    """
+    return ({k for _, _, k, _ in all_target_specs() if k}
+            | {k for _, _, k, _, _ in increment_targets() if k})
+
+
+def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
+    rows, failures, reports = [], [], []
+    for name, want_outcome, want_killer, study in make_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        pre = survivor_prereg() if name == "survivor" else None
+        rep = F.run(study, prereg=pre, n_draws=n_draws, seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        got_outcome = rep.outcome
+        ok_outcome = got_outcome == want_outcome
+        ok_killer = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, got_outcome, want_killer or "-", ",".join(killers) or "-",
+                     ok_outcome and ok_killer))
+        if not (ok_outcome and ok_killer):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, inc, null_of in increment_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run_increment(inc, combined_of_seed=null_of, n_draws=max(60, n_draws),
+                              seed=SEED, verbose=False)
+        print(F.render_yearly(inc))
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in declaration_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in artefact_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in robustness_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in (pipeline_targets() if include_pipeline else []):
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        pre = F.Prereg(claim=study.claim, mechanism="synthetic: a persistent latent state "
+                       "leaks into returns and a trailing window recovers it",
+                       primary_metric="rank_ic_mean", horizon=5) if name == "clean" else None
+        rep = F.run(study, prereg=pre, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in strategy_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        pre = F.Prereg(claim=study.claim,
+                       mechanism="synthetic: the latent state is observable by construction",
+                       primary_metric="sharpe") if name == "skilled_book" else None
+        rep = F.run_strategy(study, prereg=pre, n_draws=n_draws * 2, seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    # Which veto-carrying checks actually fired somewhere, measured rather than
+    # declared. A check nobody has seen reject anything has not been shown to
+    # work, whatever its coverage entry says.
+    tripped, blocking_seen = set(), set()
+    for r in reports:
+        for c in r.checks:
+            if c.blocking:
+                blocking_seen.add(c.id)
+            if c.blocking and c.outcome == "FAIL":
+                tripped.add(c.id)
+    never = sorted(blocking_seen - tripped)
+
+    print("\n" + "=" * 96)
+    print(f"{'target':<42}{'expected':<14}{'got':<14}{'want':<7}{'got killer':<14}")
+    print("-" * 96)
+    for name, we, ge, wk, gk, ok in rows:
+        print(f"{name:<42}{we:<14}{ge:<14}{wk:<7}{gk:<14}{'ok' if ok else 'MISMATCH'}")
+    print("=" * 96)
+    if never:
+        print(f"\nveto-carrying checks never seen to reject anything: {', '.join(never)}")
+        print("Each of those is a check nobody has watched do its job.")
+    if failures:
+        print(f"SELF-CHECK FAILED on: {', '.join(failures)}")
+        print("The referee is not calibrated. Fix it before trusting it on a real claim.")
+        return 1
+    print("SELF-CHECK PASSED: every target died of the cause it was built to die of.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 120,
+                          include_pipeline="--fast" not in sys.argv))
