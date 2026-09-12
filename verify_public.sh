@@ -37,11 +37,17 @@ if [[ -d .git ]]; then
   fi
 fi
 
-# The priors themselves must never be here, under any name.
-if compgen -G "**/*verdicts*.jsonl" >/dev/null 2>&1 || [[ -d priors ]]; then
-  echo "BAD  a priors file is present; records are research output and stay private"; bad=1
+# The priors themselves must never be here, under any name. Detect them by what
+# they contain rather than by filename: a check keyed to "*verdicts*.jsonl"
+# reported clean on a file called priors_test.jsonl, and only the path and
+# project-name scans caught it. A record set about public strategies only would
+# have passed all three.
+recs=$(grep -rlE '"killed_by"' . --include='*.json' --include='*.jsonl'        --exclude-dir=.git 2>/dev/null || true)
+if [[ -n "$recs" ]] || [[ -d priors ]]; then
+  echo "BAD  prior records present (research output, stays private):"
+  echo "$recs" | sed 's/^/     /'; bad=1
 else
-  echo "ok   no priors records"
+  echo "ok   no prior records"
 fi
 
 [[ $bad -eq 0 ]] && echo "PUBLIC-SAFE" || echo "NOT SAFE TO PUSH"
