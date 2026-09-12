@@ -25,6 +25,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   increment_is_noise     adding anything would have done it-> REJECTED by I2
   increment_one_year     the whole gain is one year        -> REJECTED by I1
 
+  mechanism_falsified    the number holds, the story does not -> REJECTED by P6
   filtered_events        a trigger list that is the answer -> REJECTED by M7
   same_bar_fill          filled on the bar it was formed on-> REJECTED by P4
   external_fact_wrong    disagrees with the public record  -> REJECTED by P5
@@ -146,10 +147,21 @@ def make_targets():
     honest = trailing_mean(ret, WINDOW, end_offset=0)
 
     return [
+        # The implications this study pre-registered are things the gauntlet
+        # itself tests -- delay decay is A3, the matched null is M1, the naive
+        # baseline is M4 -- so the results are recorded from those checks. That
+        # is the intended workflow: declaring implications and never testing
+        # them leaves the claim where it was, and P6 reads it as inconclusive
+        # rather than passing.
         ("survivor", "SURVIVES", None, F.Study(
             claim="Trailing 5-step momentum forecasts the next 5 steps",
             signal=honest, horizon=5, cost_bp=5.0, n_candidates_searched=1,
-            naive_baseline=ret, naive_label="last step's return", **common)),
+            naive_baseline=ret, naive_label="last step's return",
+            implication_results={
+                "the edge must decay smoothly as entry is delayed": "held",
+                "it must survive a null matched on size and volatility": "held",
+                "it must not be reproducible by last step's return alone": "held"},
+            **common)),
 
         ("noise", "REJECTED", "M0", F.Study(
             claim="A random cross-section forecasts returns",
@@ -325,6 +337,12 @@ def declaration_targets():
             claim="Momentum survives costs (with the spread charged twice)",
             signal=honest, cost_bp=20.0, price_convention="touch",
             cost_components=["commission", "spread"], **common)),
+
+        ("mechanism_falsified", "REJECTED", "P6", F.Study(
+            claim="Momentum forecasts returns because slow information diffuses",
+            signal=honest, cost_bp=5.0,
+            implication_results={"it must be stronger where coverage is thinner": "failed",
+                                 "it must decay as the horizon lengthens": "held"}, **common)),
 
         ("no_capacity", "REJECTED", "E5", F.Study(
             claim="Momentum survives costs at ten billion",
@@ -610,7 +628,14 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
     for name, want_outcome, want_killer, study in declaration_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
-        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        # A mechanism can only be falsified if it was written down, so this
+        # target needs the pre-registration that declared it.
+        pre = (F.Prereg(claim=study.claim,
+                        mechanism="slow information diffusion",
+                        implications=list(study.implication_results),
+                        primary_metric="rank_ic_mean", horizon=5)
+               if study.implication_results else None)
+        rep = F.run(study, prereg=pre, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
         print(rep.render())
         reports.append(rep)
         killers = [c.id for c in rep.killers]

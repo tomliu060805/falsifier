@@ -206,3 +206,57 @@ def p5_external_facts(facts: Optional[List[Dict[str, Any]]] = None) -> "Check":
     return Check("P5", "process", "external fact check", PASS,
                  detail=f"{len(facts)} external fact(s) reproduce",
                  evidence={"n_facts": len(facts)})
+
+
+def p6_mechanism_implications(prereg: Optional["Prereg"] = None,
+                              results: Optional[Dict[str, str]] = None) -> "Check":
+    """P6 -- test what else must be true, and record what came back.
+
+    A model can reproduce its predictive content closely -- to the decimal, in
+    places -- while the economic channel it claims to work through does not hold
+    at all: the proposed interaction has the wrong sign, or the proxy for it
+    carries nothing. The number survives and the story does not, and it is the
+    story that was supposed to generalise to the next market and the next decade.
+
+    The implications written into the pre-registration are what make the story
+    falsifiable. Declaring them and never testing them leaves the claim exactly
+    where it was, which is why that reads INCONCLUSIVE here rather than passing.
+
+    ``results`` maps each implication to "held", "failed" or "untested".
+    """
+    from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check
+
+    imps = list(prereg.implications) if prereg and prereg.implications else []
+    if not imps:
+        return Check("P6", "process", "mechanism implications", NA, blocking=False,
+                     detail="no implications declared. A mechanism that predicts nothing "
+                            "beyond the original result is not a mechanism, and nothing "
+                            "here can be tested")
+    if not results:
+        return Check("P6", "process", "mechanism implications", INCONCLUSIVE,
+                     statistic=0.0, threshold=float(len(imps)),
+                     detail=f"{len(imps)} implication(s) declared and none tested. They are "
+                            "what turn the story into something falsifiable; untested, the "
+                            "claim rests on the number alone")
+    held = [i for i in imps if results.get(i) == "held"]
+    failed = [i for i in imps if results.get(i) == "failed"]
+    untested = [i for i in imps if i not in held and i not in failed]
+    ev = {"held": held, "failed": failed, "untested": untested}
+    if failed:
+        return Check("P6", "process", "mechanism implications", FAIL,
+                     statistic=float(len(failed)), threshold=0.0,
+                     detail=(f"{len(failed)} of {len(imps)} implications do not hold: "
+                             + "; ".join(failed[:2])
+                             + ". The result may still be real, but the mechanism claimed "
+                               "for it is not the one producing it -- and a weaker claim, "
+                               "without the story, is what survives"),
+                     evidence=ev)
+    if untested:
+        return Check("P6", "process", "mechanism implications", INCONCLUSIVE,
+                     statistic=float(len(held)), threshold=float(len(imps)),
+                     detail=f"{len(held)}/{len(imps)} implications held, {len(untested)} untested",
+                     evidence=ev)
+    return Check("P6", "process", "mechanism implications", PASS,
+                 statistic=float(len(held)), threshold=float(len(imps)),
+                 detail=f"all {len(imps)} implications of the stated mechanism hold",
+                 evidence=ev)

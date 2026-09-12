@@ -107,7 +107,7 @@ def test_matched_null_false_positive_rate(panel):
 def test_taxonomy_is_consistent():
     from falsifier import taxonomy as T
     assert len({m.id for m in T.MODES}) == len(T.MODES), "duplicate mode id"
-    known = {"P0", "P1", "P2", "P3", "P4", "P5",
+    known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6",
              "A0", "A1", "A2", "A3",
              "S4", "S5", "S6", "S7", "S8", "S9",
              "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9",
@@ -146,6 +146,32 @@ def test_taxonomy_is_consistent():
         assert cid in declared or cid in corroborating, (
             f"{cid} is claimed to catch a failure mode, but no target names it as the "
             "cause of death and it is not listed as corroborating")
+
+
+def test_validate_rejects_a_record_that_cannot_be_keyed(tmp_path):
+    """Keying `killed_by` to the taxonomy is the point: a record that cannot be
+    keyed means either the record is vague or the taxonomy is short a mode."""
+    import json
+    from falsifier import priors as PR
+
+    recs = [
+        dict(id="ok", claim="c", verdict="REJECTED", killed_by=["cost-eats-it"],
+             evidence="break-even 1.3bp", lesson="report break-even cost, not IC",
+             applies_to=["x"], project="p"),
+        dict(id="unkeyed", claim="c", verdict="REJECTED", killed_by=[],
+             evidence="it did not work", lesson="a lesson long enough to pass",
+             applies_to=["x"], project="p"),
+        dict(id="invented", claim="c", verdict="REJECTED", killed_by=["not-a-real-mode"],
+             evidence="it did not work", lesson="a lesson long enough to pass",
+             applies_to=["x"], project="p"),
+    ]
+    f = tmp_path / "v.jsonl"
+    f.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in recs), encoding="utf-8")
+
+    problems = PR.validate(path=str(tmp_path))
+    assert problems["no_cause"] == ["unkeyed"]
+    assert any("not-a-real-mode" in x for x in problems["unknown_mode"])
+    assert "ok" not in str(problems)
 
 
 def test_prior_roundtrip_and_search(tmp_path):
@@ -405,6 +431,18 @@ def test_p4_requires_the_convention_to_be_stated():
     assert F.p4_fill_convention("same-close").outcome == "FAIL"
     assert F.p4_fill_convention("next-open", bar_includes_signal_period=True).outcome == "FAIL"
     assert F.p4_fill_convention("nonsense").outcome == "INCONCLUSIVE"
+
+
+def test_p6_falsifies_the_story_without_falsifying_the_number():
+    pre = F.Prereg(claim="c", mechanism="slow diffusion",
+                   implications=["stronger where coverage is thin", "decays with horizon"])
+    assert F.p6_mechanism_implications(None).outcome == "NA"
+    assert F.p6_mechanism_implications(pre).outcome == "INCONCLUSIVE"
+    held = {i: "held" for i in pre.implications}
+    assert F.p6_mechanism_implications(pre, held).outcome == "PASS"
+    broken = dict(held); broken["stronger where coverage is thin"] = "failed"
+    c = F.p6_mechanism_implications(pre, broken)
+    assert c.outcome == "FAIL" and "not the one producing it" in c.detail
 
 
 def test_p5_checks_against_something_the_pipeline_never_saw():

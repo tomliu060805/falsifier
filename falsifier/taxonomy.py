@@ -246,6 +246,34 @@ MODES: Tuple[Mode, ...] = (
          "day averages it away.",
          ("M8",), "Test the extreme bucket separately before fitting a slope."),
 
+    # ---- mechanism, continued ----------------------------------------------
+    Mode("mechanism-stated-but-not-the-one-working", "mech",
+         "the result replicates, its stated mechanism does not",
+         "A model's pricing or predictive content reproduces closely, sometimes to the decimal.",
+         "The economic channel it claims to work through does not: the proposed "
+         "interaction has the wrong sign, or the proxy for it carries nothing. The "
+         "number survives and the story does not, and only the story generalises.",
+         ("P6",), "Write the implications down before testing, then test them."),
+    Mode("non-stationary-needs-retraining", "mech", "a frozen representation goes stale",
+         "A learned representation validates well and is frozen for reuse.",
+         "The relationship it encodes moves. Held fixed it decays and can reverse sign, "
+         "while the same architecture retrained on a rolling window keeps working -- so "
+         "the retraining is the mechanism, not an optimisation.",
+         (), "Compare a frozen fit against a rolling one on the later half of the sample."),
+    Mode("validated-on-substitute-data", "mech", "it worked on the stand-in source",
+         "A construction validated on sample, vendor or reconstructed data.",
+         "On the source that will actually be traded from, the values are degenerate -- "
+         "mostly zero, mostly missing, or on a different scale. The construction assumed "
+         "a distribution the real feed does not have.",
+         ("M0",), "Rebuild the factor on the production source before reading any IC."),
+    Mode("conclusion-does-not-transfer-across-frequency", "mech",
+         "the same construction, a different frequency, the opposite answer",
+         "A pattern established at one sampling frequency.",
+         "At another it is weaker, absent, or reversed -- a shape signal that works daily "
+         "can backfire at one minute, and a rule that pays weekly can be eaten by costs "
+         "daily. Frequency is not a hyper-parameter; it is a different question.",
+         (), "Re-measure at the target frequency rather than rescaling the result."),
+
     # ---- increments --------------------------------------------------------
     Mode("increment-is-the-act-not-the-thing", "null", "adding anything would have done it",
          "A candidate improves the book's curve.",
@@ -253,6 +281,13 @@ MODES: Tuple[Mode, ...] = (
          "moves the curve about as much. What was measured is the act of adding, not the "
          "thing added.",
          ("I2",), "Add a shuffled or random candidate of the same turnover and compare."),
+    Mode("composite-dilutes-the-good-component", "null",
+         "an equal-weight composite is worse than its best part",
+         "Several signals combined into one score.",
+         "One of them carries no information, and at equal weight it takes half the "
+         "score with it. Combining is not free: a good component and a null component "
+         "average to something worse than the good component alone.",
+         ("I2", "M4"), "Report each component's residual IC before combining anything."),
     Mode("increment-buys-good-years-with-bad", "cost", "the addition takes the bad years with it",
          "A candidate raises the annualised number.",
          "It turns years that were flat into losing ones, or its whole gain is a single "

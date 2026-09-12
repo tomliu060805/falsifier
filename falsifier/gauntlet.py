@@ -13,7 +13,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Sequence
 import numpy as np
 
 from . import econ, mech, pit, robust
-from .prereg import Prereg, p3_frozen_config, p4_fill_convention, p5_external_facts
+from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
+                     p5_external_facts, p6_mechanism_implications)
 from .seal import SealedSplit
 from .stats import deflated_threshold, forward_returns, ic_summary, rank_ic
 from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check, Report
@@ -86,6 +87,8 @@ class Study:
     """(T, N) bool: which events the rule fired on, for an event study."""
     fill_convention: Optional[str] = None
     bar_includes_signal_period: Optional[bool] = None
+    implication_results: Optional[Dict[str, str]] = None
+    """Each pre-registered implication mapped to "held", "failed" or "untested"."""
     external_facts: Optional[List[Dict[str, Any]]] = None
     """Facts from outside the pipeline it can be checked against -- the only
     thing that finds an error a value-by-value reproduction shares."""
@@ -135,6 +138,7 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
                           detail=prereg.mechanism.strip()[:160]))
     if study.frozen_config is not None or study.frozen_config_path:
         rep.add(p3_frozen_config(study.frozen_config or {}, study.frozen_config_path or ""))
+    rep.add(p6_mechanism_implications(prereg, study.implication_results))
     rep.add(p4_fill_convention(study.fill_convention, study.bar_includes_signal_period))
     rep.add(p5_external_facts(study.external_facts))
     if seal is not None:

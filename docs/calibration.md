@@ -121,3 +121,36 @@ both of `S5`'s thresholds — positive fraction at 0.80 against a threshold of
 0.80, reported value at the 85th percentile against 90. That was fixed by
 making the target worse, not by moving the thresholds. A target that only just
 fails tests the threshold; a check tuned until its target fails tests nothing.
+
+---
+
+## What backfilling the records did to the taxonomy
+
+The taxonomy was briefly complete: every mode named a check, and `uncovered()`
+returned an empty list. Then a few years of post-mortems were written into the
+prior records, and five modes appeared that it did not have.
+
+| mode | how many past studies | check |
+|---|---|---|
+| the result replicates, its stated mechanism does not | 4 | `P6` |
+| the same construction at another frequency gives the opposite answer | 5 | none yet |
+| an equal-weight composite is worse than its best part | 2 | `I2`, `M4` |
+| a frozen representation goes stale | 2 | none yet |
+| it worked on the stand-in data source | 1 | `M0` |
+
+The first one is the most common thing that happens to a paper replication and
+had no representation at all: a model reproduces its predictive content
+closely — to the decimal, in places — while the economic channel it claims to
+work through has the wrong sign or a proxy that carries nothing. The number
+survives and the story does not, and it is the story that was supposed to
+generalise. `P6` now asks for the implications to be written down before
+testing and for their outcomes to be recorded; declaring them and never testing
+them reads INCONCLUSIVE rather than passing.
+
+Two still have no check, and they stay on the published list rather than being
+quietly closed. A full-looking table is a reason to add modes.
+
+`validate()` is what keeps the records and the taxonomy honest with each other.
+Run over the backfilled library it found seven rejections with no cause of
+death recorded — each one either a vague record or a missing mode, and working
+through them is where four of the five new modes came from.

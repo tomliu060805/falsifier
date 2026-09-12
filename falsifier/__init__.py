@@ -18,13 +18,16 @@ from .nulls import (cs_shuffle, empirical_p, identity_permutation,
                     percentile_of, random_selection)
 from .pit import a0_truncation, a1_label_shuffle_refit, a2_feature_shift, a3_label_delay, audit
 from .pipeline import RollingFit
-from .prereg import Prereg, p3_frozen_config, p4_fill_convention, p5_external_facts
+from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
+                     p5_external_facts, p6_mechanism_implications)
 from .robust import (default_control, s5_seed_stability,
                      m5_print_quality, m6_input_freshness, s6_positive_control,
                      m7_event_integrity, m8_threshold_or_slope, s7_input_staleness,
                      m9_cross_sectional_independence, s8_knob_monotonicity,
                      s9_label_persistence)
-from .priors import Index, Prior, checklist, load as load_priors, render as render_priors, search as search_priors
+from .priors import (Index, Prior, checklist, load as load_priors,
+                     render as render_priors, search as search_priors,
+                     validate as validate_priors)
 from .taxonomy import MODES, BY_ID, Mode, by_family, coverage, uncovered
 from .seal import SealedSplit, SealError
 from .strategy import (StrategyStudy, backtest, free_selection_null,
@@ -40,8 +43,9 @@ __all__ = [
     "m6_input_freshness", "m7_event_integrity", "m8_threshold_or_slope",
     "m9_cross_sectional_independence",
     "e3_execution_delay", "e4_cost_convention", "e5_capacity",
-    "p3_frozen_config", "p4_fill_convention", "p5_external_facts", "default_control",
-    "RollingFit", "Prior", "Index", "load_priors", "search_priors", "checklist", "render_priors",
+    "p3_frozen_config", "p4_fill_convention", "p5_external_facts",
+    "p6_mechanism_implications", "default_control",
+    "RollingFit", "Prior", "Index", "load_priors", "search_priors", "checklist", "render_priors", "validate_priors",
     "MODES", "BY_ID", "Mode", "by_family", "coverage", "uncovered",
     "Increment", "excess", "render_yearly", "i1_incremental_contribution",
     "i2_increment_null", "plot_increment", "run_increment",

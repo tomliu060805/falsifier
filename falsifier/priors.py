@@ -170,3 +170,32 @@ def render(query: str, hits: Sequence[Tuple[float, Prior]], width: int = 96) -> 
             "A near-miss in this list is a warning, not a verdict. Run the gauntlet anyway;",
             "these are the checks most likely to be the ones that matter."]
     return "\n".join(out)
+
+
+def validate(priors: Optional[Sequence[Prior]] = None,
+             path: Optional[str] = None) -> Dict[str, List[str]]:
+    """Check the records against the taxonomy and the schema.
+
+    The point of keying `killed_by` to `taxonomy` is that a record which cannot
+    be keyed is telling you something: either the record is vague, or the
+    taxonomy is missing a mode. Backfilling this library from a few years of
+    post-mortems turned up four modes the taxonomy did not have, which is the
+    intended direction of traffic.
+    """
+    ps = list(priors) if priors is not None else load(path)
+    known = set(BY_ID)
+    problems: Dict[str, List[str]] = {"unknown_mode": [], "no_cause": [], "thin": [],
+                                      "duplicate_id": []}
+    seen = set()
+    for p in ps:
+        if p.id in seen:
+            problems["duplicate_id"].append(p.id)
+        seen.add(p.id)
+        for m in p.killed_by:
+            if m not in known:
+                problems["unknown_mode"].append(f"{p.id}: {m}")
+        if p.verdict == "REJECTED" and not p.killed_by:
+            problems["no_cause"].append(p.id)
+        if len(p.lesson) < 20 or len(p.evidence) < 10:
+            problems["thin"].append(p.id)
+    return {k: v for k, v in problems.items() if v}

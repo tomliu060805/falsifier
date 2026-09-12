@@ -31,16 +31,6 @@ note: stopped after the point-in-time audits: a leak makes every downstream
       number meaningless, so the nulls and the cost gate were not run
 ```
 
-Thirty-seven checks across five axes; forty-six named failure modes, each
-mapped to the check that catches it; and a self-check suite of twenty-nine
-synthetic claims that asserts the verdict **and the cause of death**, because a
-check nobody has watched reject anything has not been shown to work.
-
-Calibrated by replaying five real studies whose verdicts had been reached by
-hand, months earlier, without it. It reached the same verdict in all five — and
-that replay broke the referee eight times, twice by overturning rules that had
-been used by hand for years.
-
 ## The four axes
 
 | | check | what it attacks | needs |
@@ -49,6 +39,7 @@ been used by hand for years.
 | | `P1` stated mechanism | a result with no economic story to test | — |
 | | `P2` test seal | a hold-out that has been read more than once | a `SealedSplit` |
 | | `P3` frozen config enforced | a frozen file nothing reads back | the recomputed values |
+| | `P6` mechanism implications | a story that was never tested past the number | tested implications |
 | | `P4` fill convention declared | an engine that matches on the signal's own bar | a declaration |
 | | `P5` external fact check | an error two implementations share | a fact from outside |
 | **statistical** | `A0` truncation rebuild | the signal used data from after its timestamp | `recompute_at` |
@@ -220,7 +211,7 @@ first minute; those are the ones that set the threshold.
 
 ## Why you should trust the referee
 
-`examples/selfcheck.py` builds twenty-nine synthetic claims whose correct verdict is
+`examples/selfcheck.py` builds thirty synthetic claims whose correct verdict is
 known before the machine sees them, and asserts both the verdict **and the
 cause of death** — being rejected for the wrong reason teaches the wrong
 lesson and is scored as a failure. Every check that carries a veto has at least
@@ -242,6 +233,7 @@ filtered_events                           REJECTED      REJECTED      M7     M7 
 same_bar_fill                             REJECTED      REJECTED      P4     P4            ok
 external_fact_wrong                       REJECTED      REJECTED      P5     P5            ok
 spread_twice                              REJECTED      REJECTED      E4     E4            ok
+mechanism_falsified                       REJECTED      REJECTED      P6     P6            ok
 no_capacity                               REJECTED      REJECTED      E5     E5            ok
 bad_prints                                REJECTED      REJECTED      M5     M5            ok
 stale_cache                               REJECTED      REJECTED      M6     M6            ok
@@ -290,24 +282,31 @@ knowing which check is going to matter. That knowledge accumulates one
 post-mortem at a time and evaporates unless it is written down where something
 can search it.
 
-`falsifier.taxonomy` is 46 named ways a quantitative result turns out to be
+`falsifier.taxonomy` is 51 named ways a quantitative result turns out to be
 wrong, each extracted from a study that was built, believed, and then killed.
-Every mode names a check that catches it:
+Almost every mode names a check that catches it:
 
 ```python
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
-{'null': (7, 7), 'pit': (8, 8), 'cost': (6, 6),
- 'stat': (10, 10), 'mech': (12, 12), 'proc': (3, 3)}
->>> T.uncovered()
-[]
+{'null': (8, 8), 'pit': (8, 8), 'cost': (6, 6),
+ 'stat': (10, 10), 'mech': (14, 16), 'proc': (3, 3)}
+>>> [m.id for m in T.uncovered()]
+['non-stationary-needs-retraining',
+ 'conclusion-does-not-transfer-across-frequency']
 ```
 
-That is worth reading carefully. It means every way of being wrong *that has
-been written down* is defended against. It does not mean the list is complete:
-this is a record of what has gone wrong so far, and the next entry will arrive
-the way all the others did, from a study that was built, believed, and then
-killed. A full-looking table is a reason to add modes, not a reason to relax.
+The table was briefly full, and then backfilling a few years of post-mortems
+into the prior records turned up five modes it did not have — two of which
+still have no check. That is the intended direction of traffic, and it is why
+`uncovered()` stays published rather than being quietly closed: this is a
+record of what has gone wrong so far, and the next entry arrives the way all
+the others did, from a study that was built, believed, and then killed. A
+full-looking table is a reason to add modes, not a reason to relax.
+
+`validate()` is what keeps the two honest with each other. A record whose cause
+of death cannot be keyed to a mode means either the record is vague or the
+taxonomy is short one, and the check refuses to let either pass silently.
 
 What keeps "covered" from being a mapping exercise is the test suite: every
 check a mode points at must be some target's named cause of death, or be listed
@@ -324,9 +323,9 @@ hits = F.search_priors("learn an adjacency matrix over stocks to forecast return
 print(F.render_priors("...", hits))
 ```
 ```
-  [REJECTED] a graph network over assets improves forecasts     (illustrative)
+  [REJECTED] a volatility graph network improves implied-vol forecasts
       killed by  : null-random-structure-wins
-      evidence   : a random adjacency of the same shape scored higher
+      evidence   : random adjacency scores +0.436 against the full model's +0.332
 
 TRAPS TO CHECK FIRST:
   - a random structure does as well   [M4]
@@ -350,19 +349,13 @@ months earlier, without it.
 | signature features on intraday paths | real, but no better than a random basis of the same size | **SURVIVES**, with `M4` flagging the random basis at paired t=1.38 |
 | a published model with R²=0.89 | a row-order bug made the target the same-day return | **REJECTED by `A2`**, boundary located at `-1->+0` — leak depth exactly one step |
 | a momentum ETF rotation | 99.8th pct against free random books, 21st against turnover-matched ones | **REJECTED by `SM1`** at the 31st pct, and by `SE1` for losing to buy-and-hold |
-| the same rolling ridge, wired for `A0`/`A1` | the decisive audits had never run on anything real | **`A0` PASS at `0.00e+00`**, `A1` collapsing to −0.0010 on shuffled labels |
-| a breadth cache that froze mid-sample, and the rebuild that replaced it | found by hand, months later | **FAIL** on the incident (2419 of 2930 steps flat), **PASS** on the rebuild |
+| the same rolling ridge, wired for `A0`/`A1` | the decisive audits had never run on anything real | **SURVIVES**, `A0` reproducing the signal exactly from truncated history |
+| a breadth cache that froze in 2016, and the rebuild that replaced it | found by hand, months later | **FAIL** on the incident (2419 of 2930 steps flat), **PASS** on the rebuild |
 
-The studies are private research and are described by shape rather than by
-name; the numbers above are the referee's, not the strategies'.
-
-That replay broke the referee eight times, in eight ways no synthetic target
-produced — including one where the hand rule the projects had used for years
-turned out to be unsound past a one-step horizon, and one where the decisive
-audit had been silently unavailable on exactly the pipelines it exists for.
-Thresholds are measured rather than guessed where the data allows: `M5` sits at
-0.2% spike-and-revert, against **0.049%** on clean one-minute index data and
-about **1%** on the incident it was written from.
+That replay broke the referee six times, in six ways no synthetic target
+produced — including one where the original project's *own* audit rule turned
+out to be unsound past a one-step horizon, and one where the decisive audit had
+been silently unavailable on exactly the pipelines it exists for.
 [`docs/calibration.md`](docs/calibration.md) has the full account.
 
 ## Design notes
@@ -401,6 +394,24 @@ with it — the finding is that its multi-step IC is really a one-step effect,
 which changes what may be claimed but does not make the claim false. Checks
 whose failure has an innocent explanation are marked advisory (`~`) and carry
 no veto.
+
+## The check that falsifies the story without falsifying the number
+
+`P6` is the one that had no representation at all until a few years of paper
+replications were written into the prior records, where the same shape appeared
+four times: a model reproduces its predictive content closely — to the decimal,
+in places — while the economic channel it claims to work through has the wrong
+sign, or the proxy for it carries nothing.
+
+The number survives and the story does not, and it is the story that was
+supposed to generalise to the next market and the next decade.
+
+So the pre-registration asks for the implications — what else must be true if
+the mechanism is real — and `P6` asks what came back. Declaring them and never
+testing them reads INCONCLUSIVE rather than passing: the claim as stated
+includes its mechanism, and an untested mechanism leaves it exactly where it
+was. A weaker claim, without the story, may well survive; it is just not the
+one that was made.
 
 ## The one check that can stop a rejection
 
