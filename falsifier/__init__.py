@@ -24,7 +24,8 @@ from .robust import (default_control, s5_seed_stability,
                      m5_print_quality, m6_input_freshness, s6_positive_control,
                      m7_event_integrity, m8_threshold_or_slope, s7_input_staleness,
                      m9_cross_sectional_independence, s8_knob_monotonicity,
-                     s9_label_persistence)
+                     s9_label_persistence, s10_identification,
+                     m10_stationarity, m11_frequency_transfer, m12_control_integrity)
 from .priors import (Index, Prior, checklist, load as load_priors,
                      render as render_priors, search as search_priors,
                      validate as validate_priors)
@@ -41,7 +42,8 @@ __all__ = [
     "s5_seed_stability", "s6_positive_control", "s7_input_staleness",
     "s8_knob_monotonicity", "s9_label_persistence", "m5_print_quality",
     "m6_input_freshness", "m7_event_integrity", "m8_threshold_or_slope",
-    "m9_cross_sectional_independence",
+    "m9_cross_sectional_independence", "s10_identification",
+    "m10_stationarity", "m11_frequency_transfer", "m12_control_integrity",
     "e3_execution_delay", "e4_cost_convention", "e5_capacity",
     "p3_frozen_config", "p4_fill_convention", "p5_external_facts",
     "p6_mechanism_implications", "default_control",
