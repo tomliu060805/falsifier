@@ -571,3 +571,178 @@ def m9_cross_sectional_independence(signal: np.ndarray, fwd: np.ndarray, mask: n
                          f"the market accounts for {common:.0%} of the median cross-section's "
                          f"return variation{n_eff_note}"),
                  evidence={"common_variance_share": common, "n_dates": len(shares)})
+
+
+def m10_stationarity(signal: np.ndarray, fwd: np.ndarray, mask: np.ndarray,
+                     retrained: Optional[bool] = None, horizon: int = 1,
+                     min_n: int = 30, n_blocks: int = 4,
+                     decay_t: float = 3.0, reversal_t: float = 2.0) -> Check:
+    """M10 -- does the relationship stay where it was fitted?
+
+    The seductive form is a representation that validated well and was therefore
+    frozen for reuse. What frozen means in practice is that the study measured a
+    relationship over a window and then assumed it was a property of the market
+    rather than of the window. When it is the latter, the frozen artefact decays
+    and can reverse sign, while the same architecture retrained on a rolling
+    window keeps working -- at which point the retraining is the mechanism and
+    the architecture is not, and the paper is about the wrong thing.
+
+    Two statistics, split first half against second:
+
+      decay     the first half's IC exceeds the second's by more than noise
+      reversal  the second half's IC is significantly of the opposite sign
+
+    What the verdict is depends on a property the panel cannot show, so it has
+    to be declared. A moving relationship is a defect in a frozen pipeline and
+    the reason a rolling one exists, so:
+
+      retrained=False   drift is blocking -- the artefact being shipped is stale
+      retrained=True    drift is advisory, and reported as load-bearing: the
+                        number belongs to the refit, and a frozen deployment of
+                        the same architecture is a different product that has
+                        not been measured here
+      retrained=None    undeclared. Drift downgrades to inconclusive rather than
+                        passing, because which of the two above applies is
+                        exactly what was not said.
+    """
+    ic = rank_ic(np.asarray(signal, float), np.asarray(fwd, float), mask, min_n=min_n)
+    idx = np.flatnonzero(np.isfinite(ic))
+    if idx.size < max(4 * n_blocks, 40):
+        return Check("M10", "mechanistic", "stationarity of the relationship", INCONCLUSIVE,
+                     blocking=False,
+                     detail=f"only {idx.size} usable cross-sections -- too few to split in time")
+
+    def _block(rows: np.ndarray) -> tuple:
+        v = ic[rows]
+        v = v[np.isfinite(v)]
+        if v.size < 2:
+            return np.nan, np.nan, 0
+        se = float(v.std(ddof=1) / np.sqrt(v.size))
+        return float(v.mean()), se, int(v.size)
+
+    halves = np.array_split(idx, 2)
+    m1, se1, n1 = _block(halves[0])
+    m2, se2, n2 = _block(halves[1])
+    blocks = [_block(b) for b in np.array_split(idx, n_blocks)]
+    profile = ", ".join(f"{m:+.4f}" for m, _, _ in blocks)
+
+    se_d = float(np.sqrt(se1 ** 2 + se2 ** 2))
+    t_d = (m1 - m2) / se_d if se_d > 0 else np.nan
+    t_2 = m2 / se2 if se2 > 0 else np.nan
+    reversed_ = (np.isfinite(t_2) and m1 > 0 and m2 < 0 and t_2 <= -reversal_t)
+    decayed = (np.isfinite(t_d) and t_d >= decay_t and m1 > 0
+               and m2 < 0.5 * m1)
+    ev = {"ic_first_half": m1, "ic_second_half": m2, "t_difference": t_d,
+          "t_second_half": t_2, "block_profile": [m for m, _, _ in blocks],
+          "n_first": n1, "n_second": n2, "retrained": retrained}
+
+    if not (reversed_ or decayed):
+        return Check("M10", "mechanistic", "stationarity of the relationship", PASS,
+                     statistic=t_d, threshold=decay_t, evidence=ev,
+                     detail=(f"IC {m1:+.4f} -> {m2:+.4f} across halves (t={t_d:.2f}); "
+                             f"by quarter {profile} -- no drift beyond noise"))
+
+    what = ("reverses sign" if reversed_ else "decays")
+    body = (f"IC {m1:+.4f} -> {m2:+.4f} across halves (difference t={t_d:.2f}, "
+            f"second half t={t_2:.2f}); by quarter {profile} -- the relationship {what}")
+    if retrained is False:
+        return Check("M10", "mechanistic", "stationarity of the relationship", FAIL,
+                     statistic=t_d, threshold=decay_t, evidence=ev,
+                     detail=body + ". The pipeline is declared frozen, so this is the "
+                                   "number the frozen artefact will keep producing")
+    if retrained is True:
+        return Check("M10", "mechanistic", "stationarity of the relationship", FAIL,
+                     blocking=False, statistic=t_d, threshold=decay_t, evidence=ev,
+                     detail=body + ". The pipeline refits, so this is not a defect -- but the "
+                                   "refitting is then load-bearing and belongs in the claim, and "
+                                   "a frozen version of the same construction is a different "
+                                   "product that has not been measured")
+    return Check("M10", "mechanistic", "stationarity of the relationship", INCONCLUSIVE,
+                 statistic=t_d, threshold=decay_t, evidence=ev,
+                 detail=body + ". Whether that is a defect depends on whether the production "
+                               "pipeline refits, which was not declared -- pass "
+                               "`retrained=True/False`")
+
+
+def m11_frequency_transfer(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
+                           horizon: int = 1, strides: Sequence[int] = (2, 4),
+                           claimed_strides: Sequence[int] = (),
+                           min_n: int = 30, reversal_t: float = 2.0,
+                           decay_ratio: float = 0.33) -> Check:
+    """M11 -- the same construction, a different frequency, a different answer.
+
+    Frequency gets treated as a hyper-parameter: a pattern is established at
+    whatever cadence the data happened to arrive at, and the conclusion is then
+    carried to another one because the construction is unchanged. It is not a
+    hyper-parameter. A shape signal that works daily can backfire at one minute,
+    a rule that pays weekly can be eaten by costs daily, and a signal read on a
+    five-minute grid can be a different signal on a daily one. Each cadence is a
+    separate question with a separate answer.
+
+    So measure it rather than assume it. The panel already contains the coarser
+    frequencies: hold the same signal `k` times longer and rebalance `k` times
+    less often, which is what trading it at the coarser cadence means.
+
+    The profile is always reported. It becomes a rejection only where the claim
+    says it should hold: pass the strides the claim covers as `claimed_strides`
+    and a sign reversal or a collapse at one of them is blocking. Without that
+    the check stays advisory -- a signal that reverses at 4x has said something
+    true about itself, and it is only a defect if someone claimed otherwise.
+    """
+    from .stats import forward_returns as _fwd
+
+    sig = np.asarray(signal, float)
+    r = np.asarray(ret, float)
+    rows = []
+    base = None
+    for k in (1,) + tuple(int(s) for s in strides if int(s) > 1):
+        f = _fwd(r, horizon * k)
+        v = rank_ic(sig[::k], f[::k], mask[::k], min_n=min_n)
+        v = v[np.isfinite(v)]
+        if v.size < 8:
+            rows.append((k, np.nan, np.nan, int(v.size)))
+            continue
+        m = float(v.mean())
+        se = float(v.std(ddof=1) / np.sqrt(v.size))
+        t = m / se if se > 0 else np.nan
+        rows.append((k, m, t, int(v.size)))
+        if k == 1:
+            base = m
+    if base is None or not np.isfinite(base):
+        return Check("M11", "mechanistic", "transfer across frequency", INCONCLUSIVE,
+                     blocking=False, detail="the native frequency itself is not measurable here")
+
+    profile = "; ".join(
+        (f"{k}x: IC {m:+.4f} (t={t:.2f}, n={n})" if np.isfinite(m) else f"{k}x: not measurable")
+        for k, m, t, n in rows)
+    reversals = [k for k, m, t, _ in rows
+                 if k > 1 and np.isfinite(t) and np.sign(m) != np.sign(base) and abs(t) >= reversal_t]
+    collapses = [k for k, m, t, _ in rows
+                 if k > 1 and np.isfinite(m) and np.sign(m) == np.sign(base)
+                 and abs(m) < decay_ratio * abs(base)]
+    ev = {"native_ic": base, "profile": {k: m for k, m, _, _ in rows},
+          "t": {k: t for k, _, t, _ in rows}, "reversals": reversals,
+          "collapses": collapses, "claimed_strides": list(claimed_strides)}
+    claimed = {int(s) for s in claimed_strides}
+    broken = sorted(claimed & (set(reversals) | set(collapses)))
+
+    if broken:
+        kinds = ", ".join(f"{k}x ({'reverses' if k in reversals else 'collapses'})" for k in broken)
+        return Check("M11", "mechanistic", "transfer across frequency", FAIL,
+                     statistic=base, evidence=ev,
+                     detail=(f"the claim is asserted at {sorted(claimed)} but does not hold there: "
+                             f"{kinds}. {profile}"))
+    if not (reversals or collapses):
+        return Check("M11", "mechanistic", "transfer across frequency", PASS, blocking=False,
+                     statistic=base, evidence=ev,
+                     detail=f"same sign and comparable size at every frequency tested -- {profile}")
+    note = []
+    if reversals:
+        note.append(f"sign reverses at {reversals}x")
+    if collapses:
+        note.append(f"loses more than {1 - decay_ratio:.0%} of its size at {collapses}x")
+    return Check("M11", "mechanistic", "transfer across frequency", FAIL, blocking=False,
+                 statistic=base, evidence=ev,
+                 detail=(f"{'; '.join(note)} -- {profile}. Not blocking, because the claim did not "
+                         f"say it held there; state the frequency the claim is about, and do not "
+                         f"carry the conclusion to another one without re-measuring"))

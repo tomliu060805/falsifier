@@ -259,7 +259,7 @@ MODES: Tuple[Mode, ...] = (
          "The relationship it encodes moves. Held fixed it decays and can reverse sign, "
          "while the same architecture retrained on a rolling window keeps working -- so "
          "the retraining is the mechanism, not an optimisation.",
-         (), "Compare a frozen fit against a rolling one on the later half of the sample."),
+         ("M10",), "Compare a frozen fit against a rolling one on the later half of the sample."),
     Mode("validated-on-substitute-data", "mech", "it worked on the stand-in source",
          "A construction validated on sample, vendor or reconstructed data.",
          "On the source that will actually be traded from, the values are degenerate -- "
@@ -272,7 +272,7 @@ MODES: Tuple[Mode, ...] = (
          "At another it is weaker, absent, or reversed -- a shape signal that works daily "
          "can backfire at one minute, and a rule that pays weekly can be eaten by costs "
          "daily. Frequency is not a hyper-parameter; it is a different question.",
-         (), "Re-measure at the target frequency rather than rescaling the result."),
+         ("M11",), "Re-measure at the target frequency rather than rescaling the result."),
 
     # ---- increments --------------------------------------------------------
     Mode("increment-is-the-act-not-the-thing", "null", "adding anything would have done it",
@@ -305,6 +305,18 @@ MODES: Tuple[Mode, ...] = (
          "Intermediate caches were not rebuilt, so the report shows old numbers "
          "computed from a newer-looking pipeline.",
          ("M6",), "Assert every intermediate's last date equals the source's."),
+    Mode("estimator-not-identified", "stat", "the objective has more unknowns than constraints",
+         "A calibration reports a parameter surface, with quantiles and a story about "
+         "what moves it.",
+         "The objective is solved for two or more parameters against one observation "
+         "per contract, so its solution set is a curve rather than a point. What gets "
+         "reported is where the optimiser stopped, which is a fact about the starting "
+         "value and the search, not about the data. The tell in a published table is "
+         "quantiles that collapse onto the same constant, and worse, the same constant "
+         "in two unrelated subsamples.",
+         (), "Rerun the identical fit from two different starting points. A parameter "
+             "that follows the start is not estimated. Check which parameters move and "
+             "which do not: often one is identified and the other is along for the ride."),
     Mode("internal-consistency-not-enough", "proc", "value-by-value agreement proves little",
          "A reimplementation that matches the original to machine precision.",
          "It proves the two agree, not that either is right. A shared conceptual "

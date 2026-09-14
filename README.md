@@ -62,6 +62,8 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `M7` event integrity | a trigger list pruned with the outcome | `triggers` |
 | | `M8` ~ | threshold or slope | a threshold effect fitted as a gradient | — |
 | | `M9` ~ | cross-sectional independence | days counted as if they were names | — |
+| | `M10` | stationarity of the relationship | a frozen fit that was right about its own window | `retrained` |
+| | `M11` ~ | transfer across frequency | a conclusion carried to a cadence nobody measured | `claimed_strides` |
 | **economic** | `E1` net of cost | an edge smaller than the turnover it needs | cost in bp |
 | | `E2` per-trade block | a year of P&L made on four days | — |
 | | `E3` execution delay | a stale print or a spread bouncing back | `tradable_ret` |
@@ -290,16 +292,19 @@ Almost every mode names a check that catches it:
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
 {'null': (8, 8), 'pit': (8, 8), 'cost': (6, 6),
- 'stat': (10, 10), 'mech': (14, 16), 'proc': (3, 3)}
+ 'stat': (10, 10), 'mech': (16, 16), 'proc': (3, 3)}
 >>> [m.id for m in T.uncovered()]
-['non-stationary-needs-retraining',
- 'conclusion-does-not-transfer-across-frequency']
+[]
 ```
 
-The table was briefly full, and then backfilling a few years of post-mortems
-into the prior records turned up five modes it did not have — two of which
-still have no check. That is the intended direction of traffic, and it is why
-`uncovered()` stays published rather than being quietly closed: this is a
+The table has been full before. Backfilling a few years of post-mortems into
+the prior records then turned up five modes it did not have, two of which had
+no check at all — a frozen fit going stale, and a conclusion carried across
+frequencies — and those two are what `M10` and `M11` were written for. So it
+is full again, which means exactly what it meant the first time: every way of
+being wrong *that has been written down* is defended against. That is the
+intended direction of traffic, and it is why `uncovered()` stays published
+rather than being quietly closed: this is a
 record of what has gone wrong so far, and the next entry arrives the way all
 the others did, from a study that was built, believed, and then killed. A
 full-looking table is a reason to add modes, not a reason to relax.

@@ -1,6 +1,6 @@
 ---
 name: falsify
-description: "Adversarially referee a quantitative research claim -- a factor, a signal, a timing rule, a paper replication, or an idea an LLM just proposed -- along four axes: process (pre-registration, sealed test period), point-in-time (truncation rebuild, label-shuffle refit, feature time-shift boundary location, label delay decay), mechanism (matched nulls, identity nulls, orthogonalisation against known factors, naive-baseline comparison) and economics (net of turnover cost, per-trade block). Returns one verdict -- SURVIVES, REJECTED or INCONCLUSIVE -- naming the check that killed the claim. Use whenever a new signal, factor, strategy or research idea needs to be tested rather than believed, including Chinese requests such as 判负、证伪、零基准、前视审计、这个因子能不能用、这个想法靠不靠谱."
+description: "Adversarially referee a quantitative research claim -- a factor, a signal, a timing rule, a paper replication, or an idea an LLM just proposed -- along four axes: process (pre-registration, sealed test period), point-in-time (truncation rebuild, label-shuffle refit, feature time-shift boundary location, label delay decay), mechanism (matched nulls, identity nulls, orthogonalisation against known factors, naive-baseline comparison, drift of the relationship under a frozen fit, transfer of the conclusion across frequency) and economics (net of turnover cost, per-trade block). Returns one verdict -- SURVIVES, REJECTED or INCONCLUSIVE -- naming the check that killed the claim. Use whenever a new signal, factor, strategy or research idea needs to be tested rather than believed, including Chinese requests such as 判负、证伪、零基准、前视审计、这个因子能不能用、这个想法靠不靠谱."
 ---
 
 # Falsify a research claim
@@ -50,6 +50,12 @@ person proposing it already did, and it is why the claim needs a referee.
    it decisive. If a parameter was chosen, pass the whole sweep as
    `knob_metric`/`knob_params`; if anything was frozen, pass
    `frozen_config`/`frozen_config_path` so the freeze actually binds.
+   Say whether the production pipeline refits or ships a frozen fit
+   (`retrained=True/False`): a relationship that moves is the reason a rolling
+   pipeline exists and a defect in a frozen one, and `M10` cannot tell which is
+   being shipped. If the conclusion is asserted at cadences other than the
+   panel's own, pass them as `claimed_strides` -- otherwise `M11` reports the
+   frequency profile without holding anyone to it.
 4. **Wire the pipeline in if you can.** `A0` and `A1` are the only checks that
    settle a leak, and both are unavailable for a frozen array -- one rebuilds
    the signal from truncated history, the other refits it on destroyed labels.

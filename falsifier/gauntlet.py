@@ -93,6 +93,17 @@ class Study:
     """Facts from outside the pipeline it can be checked against -- the only
     thing that finds an error a value-by-value reproduction shares."""
     """The file they were frozen into. P3 refuses to continue if they drifted."""
+    retrained: Optional[bool] = None
+    """Does the production pipeline refit on a rolling window, or ship a frozen
+    fit? M10 needs it: a relationship that moves is the reason a rolling
+    pipeline exists and a defect in a frozen one, and the panel cannot tell
+    which is being shipped."""
+    claimed_strides: Sequence[int] = ()
+    """The coarser cadences the claim is asserted to hold at, as multiples of
+    the panel's own. Empty means the claim is about this frequency only, and
+    M11 reports the profile without enforcing it."""
+    frequency_label: str = "the panel's own frequency"
+
     positive_control: Optional[np.ndarray] = None
     """A signal known to work on this panel. Defaults to short-horizon reversal,
     which needs no data the study does not already have."""
@@ -110,6 +121,15 @@ class Study:
                 raise ValueError(f"{name} shape {arr.shape} != signal shape {np.asarray(self.signal).shape}")
             setattr(self, name, arr)
         self.mask = self.mask.astype(bool)
+
+
+def _retrained(study: "Study") -> Optional[bool]:
+    """Supplying a `refit` callable is itself a declaration that the pipeline
+    retrains -- A1 could not run against it otherwise. An explicit `retrained`
+    always wins, so a study that refits only for the audit can say so."""
+    if study.retrained is not None:
+        return study.retrained
+    return True if study.refit is not None else None
 
 
 def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSplit] = None,
@@ -267,6 +287,11 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(robust.m8_threshold_or_slope(sig, fwd, study.mask, min_n=study.min_n))
     rep.add(robust.m9_cross_sectional_independence(sig, fwd, study.mask,
                                                    min_n=max(20, study.min_n // 4)))
+    rep.add(robust.m10_stationarity(sig, fwd, study.mask, retrained=_retrained(study),
+                                    horizon=study.horizon, min_n=study.min_n))
+    rep.add(robust.m11_frequency_transfer(sig, study.ret, study.mask, horizon=study.horizon,
+                                          claimed_strides=study.claimed_strides,
+                                          min_n=study.min_n))
 
     # ---- economic ----------------------------------------------------------
     say("[5/5] cost gate ...")

@@ -36,6 +36,9 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  frozen_stale           right about the first half only  -> REJECTED by M10
+  frequency_flip         pays at 1x, reverses at 4x       -> REJECTED by M11
+
   stale_index            a real IC on untradable prints   -> REJECTED by A2
   bounce                 the spread coming back            -> REJECTED by E3
   overfit_knob           train up, valid down              -> REJECTED by S8
@@ -405,6 +408,69 @@ def integrity_targets():
     ]
 
 
+def stationarity_targets():
+    """Targets for M10 and M11 -- the two modes the taxonomy carried as holes.
+
+    Both are built the way they actually happen rather than by injecting a bug.
+
+    `frozen_stale` is a representation that is genuinely right about the first
+    half of the sample and genuinely wrong about the second, and is shipped
+    frozen. Nothing upstream can see it: the pooled IC is comfortably positive,
+    the leak audits are clean, the matched nulls pass. It is only when the
+    sample is split in time that the claim turns out to be about a window
+    rather than about the market.
+
+    `frequency_flip` is a one-step continuation followed by a slower reversal --
+    the shape that makes a signal pay at its native cadence and lose money held
+    four times longer. The construction is unchanged at every frequency, which
+    is exactly why the conclusion gets carried across them. It is declared to
+    hold at 4x, and that declaration is what makes M11 blocking.
+    """
+    g = np.random.default_rng(SEED + 71)
+
+    # ---- a relationship that moves under a frozen fit ----------------------
+    a = np.zeros((T, N))
+    eps = g.standard_normal((T, N)) * np.sqrt(1 - RHO ** 2)
+    for t in range(1, T):
+        a[t] = RHO * a[t - 1] + eps[t]
+    z_size = g.standard_normal(N)
+    f_size = g.normal(MU_SIZE, SD_SIZE, size=T)
+    idio = g.standard_normal((T, N)) * SD_IDIO
+    # The channel the latent state reaches returns through weakens and turns
+    # over: positive for the first half of the sample, negative for the second.
+    kappa = np.where(np.arange(T) < T // 2, KAPPA, -0.4 * KAPPA)
+    drift = np.empty((T, N))
+    drift[0] = idio[0]
+    drift[1:] = z_size[None, :] * f_size[1:, None] + kappa[1:, None] * a[:-1] + idio[1:]
+    drift_mask = np.ones((T, N), bool)
+    drift_mask[:WINDOW + 2] = False
+    size_panel = np.repeat(z_size[None, :], T, axis=0)
+
+    # ---- one-step continuation, multi-step reversal ------------------------
+    sig = g.standard_normal((T, N))
+    flip = g.standard_normal((T, N)) * SD_IDIO
+    c = 0.0060
+    for lag, w in ((1, 1.0), (2, -0.55), (3, -0.55), (4, -0.35)):
+        flip[lag:] += w * c * sig[:-lag]
+    flip_mask = np.ones((T, N), bool)
+    flip_mask[:WINDOW + 2] = False
+    flip_size = np.repeat(g.standard_normal(N)[None, :], T, axis=0)
+
+    return [
+        ("frozen_stale", "REJECTED", "M10", F.Study(
+            claim="A frozen representation of the latent state forecasts returns",
+            signal=a, ret=drift, mask=drift_mask, horizon=1, cost_bp=5.0,
+            window_based=False, retrained=False,
+            covariates={"size": size_panel})),
+
+        ("frequency_flip", "REJECTED", "M11", F.Study(
+            claim="The signal forecasts returns, at this frequency and four times slower",
+            signal=sig, ret=flip, mask=flip_mask, horizon=1, cost_bp=5.0,
+            window_based=False, claimed_strides=(4,),
+            covariates={"size": flip_size})),
+    ]
+
+
 def artefact_targets():
     """Targets for E3, S8 and P3.
 
@@ -577,8 +643,8 @@ def pipeline_targets():
 
 def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
-            + artefact_targets() + robustness_targets() + pipeline_targets()
-            + strategy_targets())
+            + stationarity_targets() + artefact_targets() + robustness_targets()
+            + pipeline_targets() + strategy_targets())
 
 
 def declared_killers() -> set:
@@ -647,6 +713,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in stationarity_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)

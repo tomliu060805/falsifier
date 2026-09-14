@@ -110,7 +110,7 @@ def test_taxonomy_is_consistent():
     known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6",
              "A0", "A1", "A2", "A3",
              "S4", "S5", "S6", "S7", "S8", "S9",
-             "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9",
+             "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11",
              "E1", "E2", "E3", "E4", "E5", "I1", "I2",
              "SM0", "SM1", "SE1", "SE2"}
     for m in T.MODES:
@@ -128,6 +128,9 @@ def test_taxonomy_is_consistent():
 
     claimed = {c for m in T.MODES for c in m.caught_by}
     advisory = {"M2", "M4", "M8", "M9", "E2", "SE2", "SM0", "S6", "A3", "P1"}  # informative, no veto
+    # M11 is the borderline one: it carries a veto only where the claim was
+    # asserted to hold at another cadence, so it is a target's cause of death
+    # (frequency_flip declares `claimed_strides`) and advisory everywhere else.
     # Checks that carry a veto but are not any target's *primary* cause of
     # death. Each needs a reason, so that adding to this set is a decision
     # rather than a way to make the test go quiet.
