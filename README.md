@@ -51,6 +51,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `S6` positive control | a null result from an apparatus with no power | — |
 | | `S8` knob monotonicity | train rising while validation falls | a parameter sweep |
 | | `S9` label persistence | a slow label inflating every ratio built on it | — |
+| | `S10` identification | a parameter that is where the optimiser stopped | `fit_from_start` |
 | **mechanistic** | `S7` input staleness | a feed that stopped moving mid-series | — |
 | | `M5` print quality | moves that never happened | — |
 | | `M6` input freshness | a cache that ends short of the panel | — |
@@ -64,6 +65,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `M9` ~ | cross-sectional independence | days counted as if they were names | — |
 | | `M10` | stationarity of the relationship | a frozen fit that was right about its own window | `retrained` |
 | | `M11` ~ | transfer across frequency | a conclusion carried to a cadence nobody measured | `claimed_strides` |
+| | `M12` control integrity | orthogonalised against a piece of the answer | controls |
 | **economic** | `E1` net of cost | an edge smaller than the turnover it needs | cost in bp |
 | | `E2` per-trade block | a year of P&L made on four days | — |
 | | `E3` execution delay | a stale print or a spread bouncing back | `tradable_ret` |
@@ -291,8 +293,8 @@ Almost every mode names a check that catches it:
 ```python
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
-{'null': (8, 8), 'pit': (8, 8), 'cost': (6, 6),
- 'stat': (10, 10), 'mech': (16, 16), 'proc': (3, 3)}
+{'null': (8, 8), 'pit': (8, 8), 'cost': (7, 7),
+ 'stat': (11, 11), 'mech': (17, 17), 'proc': (4, 4)}
 >>> [m.id for m in T.uncovered()]
 []
 ```
@@ -302,7 +304,12 @@ the prior records then turned up five modes it did not have, two of which had
 no check at all — a frozen fit going stale, and a conclusion carried across
 frequencies — and those two are what `M10` and `M11` were written for. So it
 is full again, which means exactly what it meant the first time: every way of
-being wrong *that has been written down* is defended against. That is the
+being wrong *that has been written down* is defended against. It did not stay
+full for long: the next few studies filed three more modes -- a calibration
+whose parameters were where the optimiser stopped, a mechanical argument used
+as a premise instead of tested, and an orthogonalisation run against a
+regressor that contained the target -- and `S10` and `M12` are what closed the
+two of those that needed new checks. That is the
 intended direction of traffic, and it is why `uncovered()` stays published
 rather than being quietly closed: this is a
 record of what has gone wrong so far, and the next entry arrives the way all

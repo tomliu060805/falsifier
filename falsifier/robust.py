@@ -746,3 +746,123 @@ def m11_frequency_transfer(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray
                  detail=(f"{'; '.join(note)} -- {profile}. Not blocking, because the claim did not "
                          f"say it held there; state the frequency the claim is about, and do not "
                          f"carry the conclusion to another one without re-measuring"))
+
+
+def s10_identification(fit_from_start: Callable[[Dict[str, float]], Dict[str, float]],
+                       starts: Sequence[Dict[str, float]],
+                       follow_tol: float = 0.5) -> Check:
+    """S10 -- is the parameter estimated, or is it where the optimiser stopped?
+
+    A calibration reports a parameter surface with quantiles and a story about
+    what moves it. If the objective is solved for two or more parameters against
+    one observation per contract, its solution set is a curve rather than a
+    point, and what gets reported is a fact about the starting value and the
+    search rather than about the data. The published tell is quantiles that
+    collapse onto the same constant -- worse, the same constant in two unrelated
+    subsamples -- but by then the table exists and looks like a result.
+
+    The probe is mechanical and settles it: run the identical fit from several
+    different starting points. A parameter whose solution follows its own start
+    is not estimated. Usually some parameters are identified and others are
+    along for the ride, so this reports per parameter rather than as one verdict.
+
+    `follow_tol` is the share of the starting spread that may survive into the
+    solutions. Zero would be a perfectly identified parameter; 1.0 would be one
+    that never moved from its start at all.
+    """
+    if len(starts) < 3:
+        return Check("S10", "statistical", "identification", INCONCLUSIVE, blocking=False,
+                     detail="fewer than three starting points -- nothing to compare")
+    sols = [fit_from_start(dict(s)) for s in starts]
+    names = sorted(set().union(*[set(s) for s in sols]) & set().union(*[set(s) for s in starts]))
+    if not names:
+        return Check("S10", "statistical", "identification", INCONCLUSIVE, blocking=False,
+                     detail="the fit returned no parameter that was also a starting value")
+    rows, unidentified = {}, []
+    for n in names:
+        s0 = np.array([float(s[n]) for s in starts], float)
+        s1 = np.array([float(x[n]) for x in sols], float)
+        spread0 = float(s0.max() - s0.min())
+        spread1 = float(s1.max() - s1.min())
+        # How much of the spread in the starting points survives into the
+        # solutions. A scale-free version of "the answer followed the guess".
+        follow = (spread1 / spread0) if spread0 > 0 else (np.inf if spread1 > 0 else 0.0)
+        rows[n] = {"start_spread": spread0, "solution_spread": spread1, "follow": follow}
+        if follow > follow_tol:
+            unidentified.append(n)
+    body = "; ".join(f"{n}: {rows[n]['follow']:.2f} of the starting spread survives"
+                     for n in names)
+    if not unidentified:
+        return Check("S10", "statistical", "identification", PASS,
+                     threshold=follow_tol, evidence=rows,
+                     detail=f"every parameter converges away from its start -- {body}")
+    return Check("S10", "statistical", "identification", FAIL,
+                 threshold=follow_tol, evidence=rows,
+                 detail=(f"{', '.join(unidentified)} follow(s) the starting value and is not "
+                         f"estimated -- {body}. Report only the parameters that moved, and "
+                         f"treat any quantile or subsample story about the others as a "
+                         f"description of the optimiser"))
+
+
+def m12_control_integrity(controls: Sequence[np.ndarray], names: Sequence[str],
+                          signal: np.ndarray, fwd: np.ndarray, mask: np.ndarray,
+                          horizon: int = 1, min_n: int = 30, span: int = 4) -> Check:
+    """M12 -- is the control a control, or a piece of the answer?
+
+    Orthogonalising against a regressor that contains the target does not remove
+    a confound, it manufactures one: the residual inherits the part of the label
+    that was sitting inside the control, and the residual IC comes out higher
+    than the raw IC rather than lower. That is the diagnostic -- residualising
+    against something legitimate can only take information away.
+
+    So two questions per control. Does it read past its own timestamp -- the same
+    boundary location A2 runs on the signal, applied to the control? And does it
+    predict the label better than the signal being defended does, which is either
+    a leak or an admission that the control is the better signal.
+
+    This is blocking, and it runs before the orthogonalisation rather than after,
+    because a contaminated control invalidates M3 and every matched null built
+    on it -- the numbers still appear, and they are all of the wrong thing.
+    """
+    from .pit import a2_feature_shift
+
+    if not len(controls):
+        return Check("M12", "mechanistic", "control integrity", NA, blocking=False,
+                     detail="no controls supplied -- nothing to orthogonalise against, "
+                            "and nothing to check")
+    labels = list(names) if len(names) == len(controls) else [f"c{i}" for i in range(len(controls))]
+    sig_ic = rank_ic(np.asarray(signal, float), fwd, mask, min_n=min_n)
+    sig_ic = sig_ic[np.isfinite(sig_ic)]
+    sig_strength = float(np.abs(sig_ic.mean())) if sig_ic.size else np.nan
+
+    leaks, stronger, rows = [], [], {}
+    for c, nm in zip(controls, labels):
+        arr = np.asarray(c, float)
+        a2 = a2_feature_shift(arr, fwd, mask, window_based=True, min_n=min_n, span=span)
+        v = rank_ic(arr, fwd, mask, min_n=min_n)
+        v = v[np.isfinite(v)]
+        strength = float(np.abs(v.mean())) if v.size else np.nan
+        rows[nm] = {"a2": a2.outcome, "a2_detail": a2.detail[:120], "abs_ic": strength}
+        if a2.outcome == FAIL:
+            leaks.append(nm)
+        elif np.isfinite(strength) and np.isfinite(sig_strength) and sig_strength > 0 \
+                and strength > 2.0 * sig_strength:
+            stronger.append(nm)
+
+    if leaks:
+        return Check("M12", "mechanistic", "control integrity", FAIL, evidence=rows,
+                     detail=(f"control(s) {', '.join(leaks)} read past their own timestamp. "
+                             f"Every residual and every matched null computed against them is "
+                             f"inflated rather than cleaned -- residualising on something that "
+                             f"contains the label raises the residual IC instead of lowering it. "
+                             f"Fix the control's timestamp before reading M1 or M3"))
+    if stronger:
+        return Check("M12", "mechanistic", "control integrity", INCONCLUSIVE, blocking=False,
+                     evidence=rows,
+                     detail=(f"control(s) {', '.join(stronger)} predict the label more than twice "
+                             f"as strongly as the signal does (|IC| {sig_strength:.4f}). That is "
+                             f"either a control that contains the target, or an admission that "
+                             f"the control is the better signal -- say which"))
+    return Check("M12", "mechanistic", "control integrity", PASS, evidence=rows,
+                 detail=f"{len(labels)} control(s) are timestamped ahead of the label and none "
+                        f"outpredicts the signal")

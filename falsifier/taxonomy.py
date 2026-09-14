@@ -260,6 +260,39 @@ MODES: Tuple[Mode, ...] = (
          "while the same architecture retrained on a rolling window keeps working -- so "
          "the retraining is the mechanism, not an optimisation.",
          ("M10",), "Compare a frozen fit against a rolling one on the later half of the sample."),
+    Mode("mechanism-not-established", "proc",
+         "a mechanical argument used as a premise instead of tested",
+         "A story so mechanical it does not feel like a hypothesis -- cost is fixed and the "
+         "gross edge scales with volatility, so the high-volatility days must be the good ones.",
+         "It is still a hypothesis, and the direction of a whole search gets chosen by it "
+         "before anyone measures it. Measured, it can be flat or backwards: the rank "
+         "correlation between the driver and the edge comes out at zero and the top bucket "
+         "is the worst one. Everything searched along that direction was then searched for "
+         "no reason, and whatever survived is the multiple-testing residue.",
+         ("P6",),
+         "Regress the outcome on the quantity the argument says drives it, and bucket it, "
+         "before searching along it."),
+    Mode("control-contains-the-target", "mech",
+         "orthogonalised against a piece of the answer",
+         "A residual IC that comes out *higher* than the raw IC after controlling for a covariate.",
+         "Residualising against something legitimate can only take information away. A "
+         "residual that rises has inherited the part of the label that was sitting inside the "
+         "regressor -- a control measured over a window that overlaps the target, or one that "
+         "is a component of it. Every matched null and every orthogonalisation built on that "
+         "control is then inflated rather than cleaned.",
+         ("M12", "M3"),
+         "Run the boundary locator on each control, not only on the signal, and separate the "
+         "controls by decision timestamp."),
+    Mode("ic-not-tradable", "cost",
+         "the IC is stable and the money is not",
+         "A signal whose IC holds up out of sample, sometimes more strongly than in sample.",
+         "The rule that consumes it is binary -- hold or do not hold, in or out -- and a "
+         "binary split throws away most of the ranking the IC measured. Where the IC's "
+         "contribution sits in the tail, the split puts the tail and the middle on the same "
+         "side. A stable IC and a negative economic increment are not a contradiction.",
+         ("M8", "E1"),
+         "Price the rule, never the IC, and check whether the effect is graded before "
+         "consuming it with a threshold."),
     Mode("validated-on-substitute-data", "mech", "it worked on the stand-in source",
          "A construction validated on sample, vendor or reconstructed data.",
          "On the source that will actually be traded from, the values are degenerate -- "
@@ -314,7 +347,7 @@ MODES: Tuple[Mode, ...] = (
          "value and the search, not about the data. The tell in a published table is "
          "quantiles that collapse onto the same constant, and worse, the same constant "
          "in two unrelated subsamples.",
-         (), "Rerun the identical fit from two different starting points. A parameter "
+         ("S10",), "Rerun the identical fit from two different starting points. A parameter "
              "that follows the start is not estimated. Check which parameters move and "
              "which do not: often one is identified and the other is along for the ride."),
     Mode("internal-consistency-not-enough", "proc", "value-by-value agreement proves little",

@@ -26,6 +26,12 @@ person proposing it already did, and it is why the claim needs a referee.
    the number.
 3. **Ask what decided which names entered**, and match `covariates` on every
    one of them. This single argument determines whether `M1` means anything.
+   Ask the same question of every `control`: a regressor measured over a window
+   that overlaps the label is not a control, and orthogonalising against it
+   *raises* the residual IC instead of lowering it. `M12` runs the boundary
+   locator on the controls for exactly this reason, and it is blocking, because
+   `M1` and `M3` built on a contaminated control look healthy and measure
+   something else.
 4. **Ask how many variants were tried**, including the ones abandoned early,
    and pass the honest count as `n_candidates_searched`.
 5. **Do not touch the test period.** Development happens on train and valid.
@@ -56,6 +62,9 @@ person proposing it already did, and it is why the claim needs a referee.
    being shipped. If the conclusion is asserted at cadences other than the
    panel's own, pass them as `claimed_strides` -- otherwise `M11` reports the
    frequency profile without holding anyone to it.
+   If the claim rests on a calibrated parameter, pass `fit_from_start` and three
+   or more `starts`: `S10` reruns the identical fit from each and reports which
+   parameters converge and which follow their own starting value.
 4. **Wire the pipeline in if you can.** `A0` and `A1` are the only checks that
    settle a leak, and both are unavailable for a frozen array -- one rebuilds
    the signal from truncated history, the other refits it on destroyed labels.

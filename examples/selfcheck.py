@@ -36,6 +36,9 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  unidentified_fit       a ridge, not a point             -> REJECTED by S10
+  leaky_control          orthogonalised against the answer-> REJECTED by M12
+
   frozen_stale           right about the first half only  -> REJECTED by M10
   frequency_flip         pays at 1x, reverses at 4x       -> REJECTED by M11
 
@@ -408,6 +411,65 @@ def integrity_targets():
     ]
 
 
+def identification_targets():
+    """Targets for S10 and M12 -- both closing modes the prior records opened.
+
+    `unidentified_fit` is a two-parameter objective with one observation per
+    unit, so its solution set is a ridge rather than a point. One parameter is
+    pinned by the data and the other slides along the ridge, which is the usual
+    shape: something is estimated, something is along for the ride, and the
+    table reports both the same way. The fit here is deliberately honest --
+    it converges, it reports a surface, and every number in it is reproducible.
+    Only running it from different starting points shows which half is real.
+
+    `leaky_control` is the one that was found the expensive way. A control is
+    added to orthogonalise against, and it happens to be measured over a window
+    that overlaps the label. Residualising against it then *raises* the residual
+    IC, which reads as the signal surviving a hard test. Nothing else objects:
+    the signal is honest, the panel is fine, and M3 will report a healthy
+    residual. The contamination is in the control, so the boundary locator has
+    to be run on the control as well.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    g = np.random.default_rng(SEED + 83)
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+
+    # A ridge: y = (alpha + beta) * x, so only the sum is identified.
+    x = g.standard_normal(400)
+    y = 1.7 * x + g.standard_normal(400) * 0.05
+
+    def fit_from_start(start):
+        al, be = float(start["alpha"]), float(start["beta"])
+        # Coordinate descent on a ridge-shaped objective: it converges, it is
+        # deterministic, and where it lands depends on where it began.
+        for _ in range(200):
+            al = float(np.mean((y - be * x) * x) / np.mean(x ** 2))
+            be = float(np.mean((y - al * x) * x) / np.mean(x ** 2))
+        return {"alpha": al, "beta": be, "sum": al + be}
+
+    starts = [{"alpha": v, "beta": 1.7 - v} for v in (-2.0, -0.5, 0.85, 2.0, 3.5)]
+
+    # A control that reads one step past its own timestamp -- the same off-by-one
+    # A2 finds in a signal, but sitting in the thing being controlled *for*.
+    leaky_ctrl = trailing_mean(ret, WINDOW, end_offset=1)
+
+    return [
+        ("unidentified_fit", "REJECTED", "S10", F.Study(
+            claim="The calibrated parameter surface describes the data",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel},
+            fit_from_start=fit_from_start, starts=starts)),
+
+        ("leaky_control", "REJECTED", "M12", F.Study(
+            claim="Momentum survives orthogonalisation against a related feature",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel},
+            controls=[leaky_ctrl], control_names=["overlapping_window"])),
+    ]
+
+
 def stationarity_targets():
     """Targets for M10 and M11 -- the two modes the taxonomy carried as holes.
 
@@ -643,8 +705,8 @@ def pipeline_targets():
 
 def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
-            + stationarity_targets() + artefact_targets() + robustness_targets()
-            + pipeline_targets() + strategy_targets())
+            + stationarity_targets() + identification_targets() + artefact_targets()
+            + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
 def declared_killers() -> set:
@@ -713,6 +775,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in identification_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)

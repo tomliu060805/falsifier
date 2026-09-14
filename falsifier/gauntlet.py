@@ -80,6 +80,14 @@ class Study:
     """metric_of(param, segment) -> float, over a parameter sweep. S8 needs the
     whole sweep, not the setting that was chosen."""
     knob_params: Sequence[float] = ()
+    fit_from_start: Optional[Callable[[Dict[str, float]], Dict[str, float]]] = None
+    """fit(starting_values) -> fitted_values. Supply it when the claim rests on a
+    calibrated parameter, and S10 checks whether the parameter was estimated or
+    is simply where the optimiser stopped."""
+    starts: Sequence[Dict[str, float]] = ()
+    """The starting points to run that fit from -- three or more, spread wide
+    enough that a parameter following its start is visible."""
+
     frozen_config: Optional[Dict[str, Any]] = None
     """The cut points, thresholds and constants the current run recomputed."""
     frozen_config_path: Optional[str] = None
@@ -254,6 +262,15 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(robust.s9_label_persistence(fwd, study.mask, horizon=study.horizon,
                                        min_n=study.min_n))
 
+    if study.fit_from_start is not None and len(study.starts) >= 3:
+        say("[2d/5] identification ...")
+        rep.add(robust.s10_identification(study.fit_from_start, study.starts))
+    else:
+        rep.add(Check("S10", "statistical", "identification", NA, blocking=False,
+                      detail="no fit supplied -- if the claim rests on a calibrated "
+                             "parameter, it has not been shown to be estimated rather "
+                             "than to be where the optimiser stopped"))
+
     if study.knob_metric is not None and len(study.knob_params) >= 4:
         say("[2c/5] knob sweep ...")
         rep.add(robust.s8_knob_monotonicity(study.knob_metric, study.knob_params))
@@ -271,6 +288,12 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(mech.m2_identity_null(sig, fwd, study.mask, n_draws=n_draws, seed=seed + 1,
                                   groups=study.groups, min_n=study.min_n))
     say("[4/5] matched null + orthogonalisation ...")
+    # Before either of them. A control that reads past its own timestamp does not
+    # make M1 and M3 wrong-looking, it makes them look fine and be about
+    # something else, so this runs first and carries a veto.
+    rep.add(robust.m12_control_integrity(study.controls, study.control_names,
+                                         sig, fwd, study.mask, horizon=study.horizon,
+                                         min_n=study.min_n))
     rep.add(mech.m1_matched_null(sig, fwd, study.mask, study.covariates,
                                  n_draws=n_draws, seed=seed + 2, min_n=study.min_n))
     rep.add(mech.m3_orthogonalize(sig, fwd, study.mask, study.controls,

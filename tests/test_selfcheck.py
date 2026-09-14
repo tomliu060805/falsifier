@@ -109,8 +109,8 @@ def test_taxonomy_is_consistent():
     assert len({m.id for m in T.MODES}) == len(T.MODES), "duplicate mode id"
     known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6",
              "A0", "A1", "A2", "A3",
-             "S4", "S5", "S6", "S7", "S8", "S9",
-             "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11",
+             "S4", "S5", "S6", "S7", "S8", "S9", "S10",
+             "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12",
              "E1", "E2", "E3", "E4", "E5", "I1", "I2",
              "SM0", "SM1", "SE1", "SE2"}
     for m in T.MODES:
