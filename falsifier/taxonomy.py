@@ -10,12 +10,12 @@ The mapping is the point. A failure mode with a `caught_by` is one the gauntlet
 already defends against. A failure mode with `caught_by=()` is a hole, and the
 holes are where the next checks should go.
 
-Every mode here currently names a check, which is worth stating carefully. It
-means every way of being wrong *that has been written down* is defended against.
-It does not mean the list is complete: this is a record of what has gone wrong
-so far, and the next entry will be added the way all the others were, by a study
-that was built, believed, and then killed. A full-looking table is a reason to
-add modes, not a reason to relax.
+The table has been full twice, and is not full now. Both times, backfilling more
+post-mortems into the prior records reopened it -- which is the traffic this is
+built for, and the reason `uncovered()` stays published instead of being quietly
+closed. A full table only ever meant that every way of being wrong *that had
+been written down* was defended against, and the list of what has been written
+down is the part that grows.
 """
 from __future__ import annotations
 
@@ -232,8 +232,10 @@ MODES: Tuple[Mode, ...] = (
          ("S7",), "Assert on last observation date, not on whether values look plausible."),
     Mode("data-encoding-changed", "mech", "a filter silently matches nothing",
          "A feature that is exactly zero for a long stretch, not NaN.",
-         "The source changed an enum and the filter now returns no rows; zero is a "
-         "legal value downstream and propagates through rolling windows.",
+         "Something upstream changed so the selection now matches nothing -- the source "
+         "changed an enum, or the loader hard-codes a filename that covers only part of the "
+         "universe. Zero is a legal value downstream and propagates through rolling windows, "
+         "so the arm that depends on it never fires and every report looks ordinary.",
          ("S7",), "Check against an external fact: how many names *should* have hit the limit?"),
     Mode("mechanism-true-but-untradable", "mech", "a real effect that cannot be traded",
          "A statistically solid conditional effect.",
@@ -350,6 +352,36 @@ MODES: Tuple[Mode, ...] = (
          ("S10",), "Rerun the identical fit from two different starting points. A parameter "
              "that follows the start is not estimated. Check which parameters move and "
              "which do not: often one is identified and the other is along for the ride."),
+    Mode("check-structurally-cannot-fire", "proc", "a check that could never have failed",
+         "A validation step that has passed on every run since it was written.",
+         "It cannot fail. A no-NaN assertion written with `~isfinite` runs on a nullable "
+         "dtype where NA passes straight through and is skipped by the sum; a release gate "
+         "that compares `old.notna() & new.notna()` excludes exactly the rows where a value "
+         "appeared or vanished, which is what it was there to find. A guard nobody has "
+         "watched reject anything is not a guard, and its green is the most expensive kind "
+         "of reassurance because it is spent on the thing you thought you had covered.",
+         (),
+         "Corrupt the data in the way the check exists to catch, and require it to fail. "
+         "A validator that cannot be made to fail is not a validator."),
+    Mode("cache-indexed-by-position", "proc", "a cache keyed by position into a growing set",
+         "A cache that reproduces exactly on the day it was built and drifts afterwards.",
+         "The cache stores integer offsets into a sorted universe, and the universe grows. "
+         "Every new listing inserts and pushes everything after it along by one, while the "
+         "stored offsets are never remapped, so the same cache entry resolves to a different "
+         "name every day. Nothing errors, the shapes match, the row counts match, and the "
+         "members are wrong by a sliding amount that looks like noise.",
+         (),
+         "Resolve a cached entry on two dates and check it names the same thing; better, "
+         "check the pipeline's own declared invariant on the resolved output."),
+    Mode("fields-from-inconsistent-sources", "mech", "one row, two selection rules",
+         "A panel row whose every column is individually correct.",
+         "The columns were selected under different rules -- one takes the nearest-expiry "
+         "contract, another everything expiring at least two months out -- so the row "
+         "describes no single instrument. Each column audits clean on its own, and the "
+         "defect only appears when the selection rule is compared across columns.",
+         (),
+         "For every column in the row, write down the rule that chose it, and require them "
+         "to be the same rule."),
     Mode("internal-consistency-not-enough", "proc", "value-by-value agreement proves little",
          "A reimplementation that matches the original to machine precision.",
          "It proves the two agree, not that either is right. A shared conceptual "

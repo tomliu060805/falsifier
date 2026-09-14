@@ -294,22 +294,29 @@ Almost every mode names a check that catches it:
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
 {'null': (8, 8), 'pit': (8, 8), 'cost': (7, 7),
- 'stat': (11, 11), 'mech': (17, 17), 'proc': (4, 4)}
+ 'stat': (11, 11), 'mech': (17, 18), 'proc': (4, 6)}
 >>> [m.id for m in T.uncovered()]
-[]
+['check-structurally-cannot-fire',
+ 'cache-indexed-by-position',
+ 'fields-from-inconsistent-sources']
 ```
 
 The table has been full before. Backfilling a few years of post-mortems into
 the prior records then turned up five modes it did not have, two of which had
 no check at all — a frozen fit going stale, and a conclusion carried across
 frequencies — and those two are what `M10` and `M11` were written for. So it
-is full again, which means exactly what it meant the first time: every way of
+was full again, which meant exactly what it meant the first time: every way of
 being wrong *that has been written down* is defended against. It did not stay
-full for long: the next few studies filed three more modes -- a calibration
-whose parameters were where the optimiser stopped, a mechanical argument used
-as a premise instead of tested, and an orthogonalisation run against a
-regressor that contained the target -- and `S10` and `M12` are what closed the
-two of those that needed new checks. That is the
+full. The next few studies filed three more modes -- a calibration whose
+parameters were where the optimiser stopped, a mechanical argument used as a
+premise instead of tested, and an orthogonalisation run against a regressor
+that contained the target -- and `S10` and `M12` closed the two that needed new
+checks. Then one more pass through the post-mortems opened it again, with three
+that have no check yet: a guard that could never have failed, a cache keyed by
+position into a universe that grows, and a panel row whose columns were each
+selected under a different rule. Those three are the current roadmap, and the
+table being full is not the steady state -- it is the moment before the next
+backfill. That is the
 intended direction of traffic, and it is why `uncovered()` stays published
 rather than being quietly closed: this is a
 record of what has gone wrong so far, and the next entry arrives the way all
