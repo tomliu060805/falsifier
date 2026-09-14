@@ -14,7 +14,8 @@ import numpy as np
 
 from . import econ, mech, pit, robust
 from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
-                     p5_external_facts, p6_mechanism_implications)
+                     p5_external_facts, p6_mechanism_implications,
+                     p7_validator_control)
 from .seal import SealedSplit
 from .stats import deflated_threshold, forward_returns, ic_summary, rank_ic
 from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check, Report
@@ -97,6 +98,14 @@ class Study:
     bar_includes_signal_period: Optional[bool] = None
     implication_results: Optional[Dict[str, str]] = None
     """Each pre-registered implication mapped to "held", "failed" or "untested"."""
+    validator: Optional[Callable[[Any], Any]] = None
+    """A data check this study relies on: validator(data) is truthy when the data
+    is acceptable. P7 requires it to be capable of failing."""
+    corruptions: Dict[str, Callable[[Any], Any]] = field(default_factory=dict)
+    """name -> a function that injects one defect `validator` claims to catch."""
+    validator_data: Any = None
+    """The data believed clean, which the corruptions are applied to."""
+
     external_facts: Optional[List[Dict[str, Any]]] = None
     """Facts from outside the pipeline it can be checked against -- the only
     thing that finds an error a value-by-value reproduction shares."""
@@ -169,6 +178,7 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(p6_mechanism_implications(prereg, study.implication_results))
     rep.add(p4_fill_convention(study.fill_convention, study.bar_includes_signal_period))
     rep.add(p5_external_facts(study.external_facts))
+    rep.add(p7_validator_control(study.validator, study.corruptions, study.validator_data))
     if seal is not None:
         st = seal.status()
         rep.add(Check("P2", "process", "test seal", PASS if st is None else INCONCLUSIVE,

@@ -107,7 +107,7 @@ def test_matched_null_false_positive_rate(panel):
 def test_taxonomy_is_consistent():
     from falsifier import taxonomy as T
     assert len({m.id for m in T.MODES}) == len(T.MODES), "duplicate mode id"
-    known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6",
+    known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7",
              "A0", "A1", "A2", "A3",
              "S4", "S5", "S6", "S7", "S8", "S9", "S10",
              "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12",
@@ -622,3 +622,49 @@ def test_chart_writes_a_png_and_refuses_tofu(tmp_path):
             F.plot_increment(inc, str(tmp_path / "cjk.png"), title="中文标题")
     finally:
         ch._find_cjk_fonts = real_finder
+
+
+def test_our_own_validator_can_be_made_to_fail():
+    """P7, pointed at this package's own guard.
+
+    `validate_priors` claims to catch three things: a cause of death that keys
+    to no failure mode, a rejection with no cause at all, and a record too thin
+    to teach anything. A guard that cannot fail and a guard with nothing to
+    report produce the same output on a clean library, and the library is clean,
+    so the only way to tell them apart is to corrupt it on purpose.
+    """
+    import dataclasses
+    import falsifier as F
+    from falsifier.prereg import p7_validator_control
+
+    clean = F.load_priors()
+    assert clean, "no priors to check against"
+
+    def validator(records):
+        return not F.validate_priors(records)
+
+    def _first_rejection(records):
+        return next(i for i, r in enumerate(records) if r.verdict == "REJECTED" and r.killed_by)
+
+    def unknown_mode(records):
+        rs = list(records); i = _first_rejection(rs)
+        rs[i] = dataclasses.replace(rs[i], killed_by=["no-such-mode-exists"])
+        return rs
+
+    def no_cause(records):
+        rs = list(records); i = _first_rejection(rs)
+        rs[i] = dataclasses.replace(rs[i], killed_by=[])
+        return rs
+
+    def thin_lesson(records):
+        rs = list(records)
+        rs[0] = dataclasses.replace(rs[0], lesson="x")
+        return rs
+
+    check = p7_validator_control(
+        validator,
+        {"a cause of death that keys to nothing": unknown_mode,
+         "a rejection with no cause": no_cause,
+         "a lesson too thin to teach": thin_lesson},
+        clean)
+    assert check.outcome == "PASS", check.detail

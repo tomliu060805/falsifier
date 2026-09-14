@@ -36,6 +36,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  guard_cannot_fire      a gate that could never go red   -> REJECTED by P7
   unidentified_fit       a ridge, not a point             -> REJECTED by S10
   leaky_control          orthogonalised against the answer-> REJECTED by M12
 
@@ -483,6 +484,61 @@ def identification_targets():
     ]
 
 
+def guard_targets():
+    """A target for P7 -- the guard that could never have failed.
+
+    Taken from the incident rather than invented. A release gate compares the
+    previous published panel against the new one and reports any value that
+    moved, and it does it by intersecting the two sides' non-missing masks:
+    `old.notna() & new.notna()`. That intersection excludes exactly the rows
+    where a value appeared or vanished between releases, which is the class of
+    change the gate exists to find. It had been green on every release since it
+    was written.
+
+    What makes it worth a target is that nothing else can see it. The gate's
+    output on real data is indistinguishable from the output of a correct gate
+    that has nothing to report, and no amount of running the pipeline separates
+    them. Only injecting the defect does -- which is S6's argument about panels,
+    pointed at a check instead.
+
+    The injected pair is deliberately asymmetric: the gate does catch a value
+    that *changed*, and only misses one that *vanished*. A target that missed
+    everything would pass a P7 that merely counted, rather than one that reads
+    which defects got through.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+
+    g = np.random.default_rng(SEED + 61)
+    published = g.standard_normal(600)
+    release = {"old": published, "new": published.copy()}
+
+    def gate(d):
+        """The real one: compare where both sides have a value."""
+        both = np.isfinite(d["old"]) & np.isfinite(d["new"])
+        return bool(np.allclose(d["old"][both], d["new"][both]))
+
+    def a_value_vanished(d):
+        new = d["new"].copy(); new[17] = np.nan
+        return {"old": d["old"], "new": new}
+
+    def a_value_changed(d):
+        new = d["new"].copy(); new[23] += 1.0
+        return {"old": d["old"], "new": new}
+
+    return [
+        ("guard_cannot_fire", "REJECTED", "P7", F.Study(
+            claim="The release gate guarantees no value changed silently between releases",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel},
+            validator=gate, validator_data=release,
+            corruptions={"a value vanished": a_value_vanished,
+                         "a value changed": a_value_changed})),
+    ]
+
+
 def stationarity_targets():
     """Targets for M10 and M11 -- the two modes the taxonomy carried as holes.
 
@@ -718,7 +774,8 @@ def pipeline_targets():
 
 def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
-            + stationarity_targets() + identification_targets() + artefact_targets()
+            + stationarity_targets() + identification_targets() + guard_targets()
+            + artefact_targets()
             + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
@@ -788,6 +845,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in guard_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)

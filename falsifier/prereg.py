@@ -12,7 +12,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -260,3 +260,75 @@ def p6_mechanism_implications(prereg: Optional["Prereg"] = None,
                  statistic=float(len(held)), threshold=float(len(imps)),
                  detail=f"all {len(imps)} implications of the stated mechanism hold",
                  evidence=ev)
+
+
+def p7_validator_control(validator: Optional[Callable[[Any], Any]] = None,
+                         corruptions: Optional[Dict[str, Callable[[Any], Any]]] = None,
+                         data: Any = None) -> "Check":
+    """P7 -- can the guard be made to fail?
+
+    The same question S6 asks of a panel, asked of a check. S6 exists because a
+    null result from an apparatus with no demonstrated power is not evidence of
+    absence; P7 exists because a green light from a guard with no demonstrated
+    power is not evidence of correctness, and that one is worse -- a panel with
+    no power at least announces itself by finding nothing, while a guard that
+    cannot fire announces itself by agreeing with you.
+
+    Both of the cases this was written from had passed on every run since the
+    day they were written:
+
+      a no-NaN assertion built on ``~isfinite`` running against a nullable
+      dtype, where NA passes straight through the comparison and is then
+      skipped by the sum, so it can only ever see ``inf``;
+
+      a release gate comparing ``old.notna() & new.notna()``, which excludes
+      exactly the rows where a value appeared or vanished between releases --
+      the rows it was written to find.
+
+    Neither is a subtle bug. Both are invisible from the outside, because a
+    guard that cannot fail and a guard with nothing to report produce the same
+    output, and there is no run of the pipeline that distinguishes them. Only
+    injecting the defect does.
+
+    ``validator(data)`` returns something truthy when the data is acceptable.
+    Each entry of ``corruptions`` maps a name to a function that introduces one
+    defect the validator claims to catch. Raising counts as detection -- failing
+    loudly is failing. Passing does not.
+    """
+    from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check
+
+    if validator is None or not corruptions:
+        return Check("P7", "process", "validator control", NA, blocking=False,
+                     detail="no validator and injected defect supplied -- any data check this "
+                            "study relies on has not been shown capable of failing")
+    try:
+        clean = validator(data)
+    except Exception as exc:
+        return Check("P7", "process", "validator control", INCONCLUSIVE,
+                     detail=f"the validator raised on data believed clean ({exc!r}); whether it "
+                            f"can detect an injected defect cannot be read until that is fixed")
+    if not clean:
+        return Check("P7", "process", "validator control", INCONCLUSIVE,
+                     detail="the validator already rejects the data believed clean, so a "
+                            "rejection of the corrupted data would say nothing -- fix the "
+                            "baseline first")
+
+    missed, caught = [], []
+    for name, corrupt in corruptions.items():
+        try:
+            verdict = validator(corrupt(data))
+        except Exception:
+            caught.append(name)          # failing loudly is failing
+            continue
+        (missed if verdict else caught).append(name)
+
+    ev = {"caught": caught, "missed": missed, "n": len(corruptions)}
+    if missed:
+        return Check("P7", "process", "validator control", FAIL, evidence=ev,
+                     detail=(f"the validator passes data corrupted by: {', '.join(missed)}. "
+                             f"It cannot fail on the defect it exists to catch, so its green "
+                             f"is not evidence about the data -- it is evidence about itself. "
+                             f"({len(caught)}/{len(corruptions)} defects detected)"))
+    return Check("P7", "process", "validator control", PASS, evidence=ev,
+                 detail=f"the validator fails on every injected defect "
+                        f"({len(caught)}/{len(corruptions)}): {', '.join(caught)}")

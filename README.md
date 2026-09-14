@@ -42,6 +42,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `P6` mechanism implications | a story that was never tested past the number | tested implications |
 | | `P4` fill convention declared | an engine that matches on the signal's own bar | a declaration |
 | | `P5` external fact check | an error two implementations share | a fact from outside |
+| | `P7` validator control | a guard that could never have failed | `validator` + `corruptions` |
 | **statistical** | `A0` truncation rebuild | the signal used data from after its timestamp | `recompute_at` |
 | | `A1` label-shuffle refit | something fitted on the full sample | `refit` |
 | | `A2` feature time-shift | an off-by-one between signal and label | — |
@@ -294,10 +295,9 @@ Almost every mode names a check that catches it:
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
 {'null': (8, 8), 'pit': (8, 8), 'cost': (7, 7),
- 'stat': (11, 11), 'mech': (17, 18), 'proc': (4, 6)}
+ 'stat': (11, 11), 'mech': (17, 18), 'proc': (5, 6)}
 >>> [m.id for m in T.uncovered()]
-['check-structurally-cannot-fire',
- 'cache-indexed-by-position',
+['cache-indexed-by-position',
  'fields-from-inconsistent-sources']
 ```
 
@@ -312,11 +312,13 @@ parameters were where the optimiser stopped, a mechanical argument used as a
 premise instead of tested, and an orthogonalisation run against a regressor
 that contained the target -- and `S10` and `M12` closed the two that needed new
 checks. Then one more pass through the post-mortems opened it again, with three
-that have no check yet: a guard that could never have failed, a cache keyed by
+that had no check: a guard that could never have failed, a cache keyed by
 position into a universe that grows, and a panel row whose columns were each
-selected under a different rule. Those three are the current roadmap, and the
-table being full is not the steady state -- it is the moment before the next
-backfill. That is the
+selected under a different rule. `P7` closed the first of them, by asking of a
+check what `S6` asks of a panel -- corrupt the data in the way the guard exists
+to catch, and require the guard to fail. The other two are the current roadmap,
+and the table being full is not the steady state; it is the moment before the
+next backfill. That is the
 intended direction of traffic, and it is why `uncovered()` stays published
 rather than being quietly closed: this is a
 record of what has gone wrong so far, and the next entry arrives the way all

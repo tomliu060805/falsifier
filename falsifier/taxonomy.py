@@ -360,7 +360,7 @@ MODES: Tuple[Mode, ...] = (
          "appeared or vanished, which is what it was there to find. A guard nobody has "
          "watched reject anything is not a guard, and its green is the most expensive kind "
          "of reassurance because it is spent on the thing you thought you had covered.",
-         (),
+         ("P7",),
          "Corrupt the data in the way the check exists to catch, and require it to fail. "
          "A validator that cannot be made to fail is not a validator."),
     Mode("cache-indexed-by-position", "proc", "a cache keyed by position into a growing set",
