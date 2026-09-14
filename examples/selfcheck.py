@@ -47,6 +47,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   overfit_knob           train up, valid down              -> REJECTED by S8
   config_drifted         the frozen file no longer binds   -> REJECTED by P3
 
+  weak_after_search      real, and far too weak for 5000  -> REJECTED by S4
   frozen_covariate       an input that stopped updating   -> REJECTED by S7
   dead_panel             nothing there, and no power       -> INCONCLUSIVE (not REJECTED)
   seed_lucky             best of thirty runs, reported     -> REJECTED by S5
@@ -228,7 +229,19 @@ def robustness_targets():
     # a target that only just fails tests the threshold, not the check.
     best = max(subsample_ic(s) for s in range(30))
 
+    # An honest signal, genuinely there, and far too weak for the number of
+    # candidates it came out of. Its own generator: every draw above feeds
+    # `seed_lucky`, which sits at a deliberately chosen percentile of its own
+    # distribution, and inserting a draw into that stream would move it.
+    thin = honest + np.random.default_rng(SEED + 57).standard_normal(honest.shape) \
+        * float(np.nanstd(honest)) * 11.0
+
     return [
+        ("weak_after_search", "REJECTED", "S4", F.Study(
+            claim="A weak but real signal, found after searching five thousand candidates",
+            signal=thin, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel}, n_candidates_searched=5000)),
+
         ("frozen_covariate", "REJECTED", "S7", F.Study(
             claim="Momentum forecasts returns (one covariate quietly stopped updating)",
             signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=5.0,
@@ -881,13 +894,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
     # Which veto-carrying checks actually fired somewhere, measured rather than
     # declared. A check nobody has seen reject anything has not been shown to
     # work, whatever its coverage entry says.
+    # A blocking check has been watched doing its job when it has been seen to
+    # stop something -- FAIL, or INCONCLUSIVE while carrying a veto, which means
+    # the claim was not judged and is not survival either. Counting only FAIL
+    # listed P0 on every run: by construction it reports PASS or INCONCLUSIVE
+    # and never FAILs, so the line was reporting a fact about the check's
+    # vocabulary rather than about the coverage, which is how a warning that is
+    # always on stops being read.
     tripped, blocking_seen = set(), set()
     for r in reports:
         for c in r.checks:
             if c.blocking:
                 blocking_seen.add(c.id)
-            if c.blocking and c.outcome == "FAIL":
-                tripped.add(c.id)
+                if c.outcome in ("FAIL", "INCONCLUSIVE"):
+                    tripped.add(c.id)
     never = sorted(blocking_seen - tripped)
 
     print("\n" + "=" * 96)

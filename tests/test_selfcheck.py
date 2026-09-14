@@ -136,8 +136,6 @@ def test_taxonomy_is_consistent():
     # rather than a way to make the test go quiet.
     corroborating = {
         "M3": "fires as a secondary killer on size_proxy; M1 is the primary there",
-        "S4": "rejects on weak significance, which every deliberately-broken target "
-              "fails earlier and every honest one passes",
         "SE1": "portfolio-vs-benchmark, exercised by a replayed real study rather "
                "than by a synthetic target",
         "P2": "the seal is enforced where it can be -- SealedSplit.unseal raises, see "
