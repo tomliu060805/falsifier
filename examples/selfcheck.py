@@ -36,6 +36,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  bought_the_locked_board  a real edge you could not enter-> REJECTED by E6
   oracle_proposed_it     the idea source knew the future  -> REJECTED by P8
   guard_cannot_fire      a gate that could never go red   -> REJECTED by P7
   unidentified_fit       a ridge, not a point             -> REJECTED by S10
@@ -485,6 +486,55 @@ def identification_targets():
     ]
 
 
+def constraint_targets():
+    """A target for E6 -- the book bought what was locked.
+
+    The signal is real. It fires the day a name goes limit-up and the name does
+    keep going the next step, so the IC is genuine, the harness passes, the
+    matched null passes, and the turnover is cheap enough that the cost gate has
+    nothing to say. Every number in the battery is correct.
+
+    It is also unavailable. The names it picks are sitting on a locked board on
+    the day it picks them, and a locked board cannot be bought. Removing exactly
+    those entries -- not charging more for them, removing them -- takes the whole
+    edge, because the edge *was* those entries.
+
+    This is the shape that the cost axis structurally cannot see: it is not a
+    price, it is an absence, and a backtest that fills the order simply never
+    finds out.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    g = np.random.default_rng(SEED + 113)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+
+    # Locked boards with a one-step continuation, injected on the honest panel so
+    # the positive control still has something to find. Both directions, and
+    # that symmetry is the point: with only limit-ups, the signal keeps a real
+    # residual edge after the constraint -- "do not short what just jumped" --
+    # because nothing stops you shorting a board that is locked *up*. Injecting
+    # only one side produces a target that looks like it has surviving alpha and
+    # does not, which is the mistake this whole check is about.
+    locked_ret = ret.copy()
+    sig = g.standard_normal((T_, N_)) * 0.01           # a weak, honest ranking
+    for t in np.arange(WINDOW + 2, T_ - 2):
+        pick = g.choice(N_, size=max(4, N_ // 10), replace=False)
+        up, down = pick[: pick.size // 2], pick[pick.size // 2:]
+        locked_ret[t, up] = 0.100                       # locked up: cannot be bought
+        locked_ret[t + 1, up] += 0.020                  # and keeps going
+        sig[t, up] += 3.0
+        locked_ret[t, down] = -0.100                    # locked down: cannot be shorted
+        locked_ret[t + 1, down] -= 0.020
+        sig[t, down] -= 3.0
+
+    return [
+        ("bought_the_locked_board", "REJECTED", "E6", F.Study(
+            claim="A signal that fires on locked boards earns the continuation",
+            signal=sig, ret=locked_ret, mask=mask, horizon=1, cost_bp=1.0,
+            window_based=False, covariates={"size": size_panel})),
+    ]
+
+
 def hindsight_targets():
     """A target for P8 -- the idea came from something that already knew.
 
@@ -822,7 +872,7 @@ def pipeline_targets():
 def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
             + stationarity_targets() + identification_targets() + guard_targets()
-            + hindsight_targets() + artefact_targets()
+            + hindsight_targets() + constraint_targets() + artefact_targets()
             + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
@@ -892,6 +942,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in constraint_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)

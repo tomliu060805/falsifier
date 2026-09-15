@@ -111,7 +111,7 @@ def test_taxonomy_is_consistent():
              "A0", "A1", "A2", "A3",
              "S4", "S5", "S6", "S7", "S8", "S9", "S10",
              "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12",
-             "E1", "E2", "E3", "E4", "E5", "I1", "I2",
+             "E1", "E2", "E3", "E4", "E5", "E6", "I1", "I2",
              "SM0", "SM1", "SE1", "SE2"}
     for m in T.MODES:
         assert m.family in T.FAMILIES
@@ -739,3 +739,40 @@ def test_withdrawn_verdict_leaves_the_advice_but_stays_findable():
     live_modes = {m for _, h in hits if h.is_live() for m in h.killed_by}
     assert {m.id for m in F.checklist(hits)} <= live_modes
     assert F.render_priors(p.claim, hits).count("WITHDRAWN") >= 1
+
+
+def test_no_mechanism_is_not_judged_rather_than_rejected():
+    """The three tiers, and the middle one is where studies actually die.
+
+    An explanation that holds is the best case. No explanation at all is not a
+    rejection -- an anomaly can be real and unexplained -- but it is not a pass
+    either, and the difference has to show up in the verdict word, because
+    REJECTED closes a line of work and INCONCLUSIVE escalates it to a human.
+
+    The third tier is the dangerous one: an explanation that was stated and
+    never tested. P6 reads that as INCONCLUSIVE too, so a half-understood
+    mechanism cannot be recorded as an understood one.
+    """
+    import numpy as np
+    import falsifier as F
+
+    T, N = 400, 60
+    g = np.random.default_rng(7)
+    ret = g.standard_normal((T, N)) * 0.02
+    sig = g.standard_normal((T, N))
+    study = F.Study(claim="x", signal=sig, ret=ret, mask=np.ones((T, N), bool), horizon=1)
+
+    silent = F.Prereg(claim="x", mechanism="   ", primary_metric="rank_ic_mean", horizon=1)
+    rep = F.run(study, prereg=silent, n_draws=20, verbose=False)
+    p1 = next(c for c in rep.checks if c.id == "P1")
+    assert p1.outcome == "INCONCLUSIVE" and p1.blocking, p1.detail
+    assert "not a rejection" in p1.detail and "not a pass" in p1.detail
+
+    # Stated but untested reads the same way -- not understood.
+    told = F.Prereg(claim="x", mechanism="slow information diffusion",
+                    implications=["stronger where coverage is thin"],
+                    primary_metric="rank_ic_mean", horizon=1)
+    rep2 = F.run(told, prereg=None, n_draws=20, verbose=False) if False else F.run(
+        study, prereg=told, n_draws=20, verbose=False)
+    p6 = next(c for c in rep2.checks if c.id == "P6")
+    assert p6.outcome == "INCONCLUSIVE", p6.detail

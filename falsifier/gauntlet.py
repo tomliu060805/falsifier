@@ -64,6 +64,13 @@ class Study:
     the contract itself. Supplying it turns E3 from a hint into a verdict."""
     price_source: str = "tradable"
     """'tradable', 'index' or 'synthetic'. Declaring 'index' switches on E3."""
+    min_dollar_volume: Optional[float] = None
+    """A liquidity floor the book would actually enforce. E6 prices it."""
+    price_limit: Optional[float] = 0.0995
+    """Daily price limit as a simple return. Names locked at it cannot be entered.
+    Set to None for a market without limits -- and say so, because E6 then has
+    nothing to price and reports that the book has not been shown to be enterable."""
+
     quantile: float = 0.1
     long_short: bool = True
 
@@ -179,8 +186,25 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
                       detail=f"{prereg.id} frozen {prereg.created_utc}; "
                              f"{prereg.n_candidates_searched} candidate(s) declared"))
         if not prereg.mechanism.strip():
-            rep.add(Check("P1", "process", "stated mechanism", FAIL,
-                          detail="no economic mechanism stated; there is nothing to test on the mechanistic axis"))
+            # Inconclusive rather than rejected, and the distinction is the whole
+            # point. An unexplained anomaly is not a refuted one -- "we do not
+            # know why this works" is not evidence that it does not. But it is
+            # not a pass either, because the mechanistic axis has nothing to
+            # test and the claim has therefore not been judged on it.
+            #
+            # What it buys is a different downstream treatment, not a verdict:
+            # a human has to look at it, the honest candidate count is the whole
+            # space that could have been searched rather than the few that were,
+            # and it gets reported as an anomaly. What it must never become is a
+            # result sized as though it were understood.
+            rep.add(Check("P1", "process", "stated mechanism", INCONCLUSIVE,
+                          detail="no economic mechanism stated, so nothing on the mechanistic "
+                                 "axis could be tested. This is not a rejection -- an anomaly "
+                                 "with no explanation can still be real -- but it is not a pass: "
+                                 "it needs a human to screen it, it needs the candidate count to "
+                                 "reflect the whole space that could have been searched rather "
+                                 "than the handful that were, and it must be reported as an "
+                                 "anomaly. Do not size it as though it were understood"))
         else:
             rep.add(Check("P1", "process", "stated mechanism", PASS, blocking=False,
                           detail=prereg.mechanism.strip()[:160]))
@@ -356,6 +380,12 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(econ.cost_gate(pf["gross"], pf["turnover"], study.cost_bp))
     rep.add(econ.trade_block_check(pf["gross"], pf["turnover"], study.cost_bp,
                                    hold=study.horizon, rebalances=pf["rebalances"]))
+    rep.add(econ.e6_entry_constraints(sig, study.ret, study.mask, q=study.quantile,
+                                      hold=study.horizon, long_short=study.long_short,
+                                      cost_bp=study.cost_bp,
+                                      dollar_volume=study.dollar_volume,
+                                      min_dollar_volume=study.min_dollar_volume,
+                                      price_limit=study.price_limit, min_n=study.min_n))
     rep.add(econ.e3_execution_delay(sig, study.ret, study.mask, horizon=study.horizon,
                                     q=study.quantile, cost_bp=study.cost_bp,
                                     tradable_ret=study.tradable_ret,

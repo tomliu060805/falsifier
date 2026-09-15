@@ -1,6 +1,6 @@
 ---
 name: falsify
-description: "Adversarially referee a quantitative research claim -- a factor, a signal, a timing rule, a paper replication, or an idea an LLM just proposed -- along four axes: process (pre-registration, sealed test period, whether the study's own data guards can be made to fail, whether the source that proposed the idea already knew the outcome), point-in-time (truncation rebuild, label-shuffle refit, feature time-shift boundary location, label delay decay), mechanism (matched nulls, identity nulls, orthogonalisation against known factors, naive-baseline comparison, drift of the relationship under a frozen fit, transfer of the conclusion across frequency) and economics (net of turnover cost, per-trade block). Returns one verdict -- SURVIVES, REJECTED or INCONCLUSIVE -- naming the check that killed the claim. Use whenever a new signal, factor, strategy or research idea needs to be tested rather than believed, including Chinese requests such as 判负、证伪、零基准、前视审计、这个因子能不能用、这个想法靠不靠谱."
+description: "Adversarially referee a quantitative research claim -- a factor, a signal, a timing rule, a paper replication, or an idea an LLM just proposed -- along four axes: process (pre-registration, sealed test period, whether the study's own data guards can be made to fail, whether the source that proposed the idea already knew the outcome), point-in-time (truncation rebuild, label-shuffle refit, feature time-shift boundary location, label delay decay), mechanism (matched nulls, identity nulls, orthogonalisation against known factors, naive-baseline comparison, drift of the relationship under a frozen fit, transfer of the conclusion across frequency) and economics (net of turnover cost, per-trade block, whether the book could have entered the positions it holds). Returns one verdict -- SURVIVES, REJECTED or INCONCLUSIVE -- naming the check that killed the claim. Use whenever a new signal, factor, strategy or research idea needs to be tested rather than believed, including Chinese requests such as 判负、证伪、零基准、前视审计、这个因子能不能用、这个想法靠不靠谱."
 ---
 
 # Falsify a research claim
@@ -58,7 +58,12 @@ person proposing it already did, and it is why the claim needs a referee.
    `positive_control` if the default (short-horizon reversal on the study's own
    returns) is not a fair test of this panel's power. Declare `price_source` --
    an index or a constructed series switches on `E3`, and `tradable_ret` makes
-   it decisive. If a parameter was chosen, pass the whole sweep as
+   it decisive. **Declare the entry constraints**: `price_limit` (the daily
+   limit as a simple return, `None` only for a market that has none) and
+   `min_dollar_volume`. `E6` prices them one at a time, and on event-driven
+   claims that line is routinely larger than the cost line -- a locked board is
+   not expensive to buy, it is impossible, and nothing on the cost axis can see
+   the difference. If a parameter was chosen, pass the whole sweep as
    `knob_metric`/`knob_params`; if anything was frozen, pass
    `frozen_config`/`frozen_config_path` so the freeze actually binds.
    If the study leans on a data check of its own -- a no-NaN assertion, a

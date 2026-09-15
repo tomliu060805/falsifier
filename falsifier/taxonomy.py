@@ -285,6 +285,44 @@ MODES: Tuple[Mode, ...] = (
          ("M12", "M3"),
          "Run the boundary locator on each control, not only on the signal, and separate the "
          "controls by decision timestamp."),
+    Mode("entry-blocked-at-the-limit", "cost", "the book bought what was locked",
+         "An event signal with a clean IC, cheap turnover and a cost gate it passes easily.",
+         "It fires on the names that just jumped, which are the names sitting on a locked "
+         "board, and a locked board cannot be bought. The constraint is not a price, it is an "
+         "absence, so the cost axis structurally cannot see it: the backtest fills the order "
+         "at a price nobody could have paid and every number downstream is computed on a book "
+         "that was never available. In one published decomposition this single line cost 10.8 "
+         "percentage points a year against a final 13.3 -- larger than cost, the liquidity "
+         "floor and the position cap together.",
+         ("E6",),
+         "Remove the entries the book could not have taken -- do not charge more for them, "
+         "remove them -- and fill the slots further down the ranking as a desk would."),
+    Mode("filtered-away-the-exposure", "mech",
+         "the losses that were filtered out were the price of the exposure",
+         "A working strategy whose losing trades look like an obvious defect, and filters that "
+         "remove them and raise the backtest Sharpe every time one is added.",
+         "The losses were not a defect. A trend book earns a few large gains by paying for many "
+         "small false starts, and the false starts are what buys the exposure -- remove enough "
+         "of them and what is left is not a cleaner trend book, it is a timing model, which is "
+         "a different thing and usually one nobody has an edge in. The tell is that the "
+         "backtest improves monotonically as conditions are added while live results go the "
+         "other way, and the diagnosis is not overfitting: the author understood the source of "
+         "the profit incorrectly and then optimised efficiently against the wrong target. "
+         "Research capability makes this worse rather than better.",
+         ("M4", "I1"),
+         "Take the version *before* the filters as the naive baseline the filtered version has "
+         "to beat, rather than as the thing being improved."),
+    Mode("improvement-outside-the-traded-set", "cost",
+         "the metric improved where the book does not hold",
+         "A model that sharpens the ranking on the event sample by a clear margin.",
+         "The population it improved on is not the population the book holds. Judging the "
+         "bottom of a distribution more accurately changes nothing about a top-fifty "
+         "portfolio, so a per-event metric can rise while the book's excess falls -- one "
+         "meta-label reported 0.85% a month on events while taking the portfolio from 4.9% to "
+         "3.8%. The improvement is real and unreachable, which is not the same as absent.",
+         ("I1", "I2"),
+         "Measure the candidate on the book that will actually be held, not on the sample it "
+         "was scored on."),
     Mode("ic-not-tradable", "cost",
          "the IC is stable and the money is not",
          "A signal whose IC holds up out of sample, sometimes more strongly than in sample.",

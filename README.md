@@ -73,6 +73,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `E3` execution delay | a stale print or a spread bouncing back | `tradable_ret` |
 | | `E4` cost convention | the spread charged twice, or never | a declaration |
 | | `E5` capacity | an edge in a window too small to use | volume |
+| | `E6` entry constraints | a book that bought what was locked | `price_limit`, `min_dollar_volume` |
 
 Checks that cannot run say so — `A0` reports `NA` with *"the decisive audit did
 not run"* rather than quietly passing. A battery that goes green because you
@@ -295,7 +296,7 @@ Almost every mode names a check that catches it:
 ```python
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
-{'null': (8, 8), 'pit': (8, 8), 'cost': (7, 7),
+{'null': (8, 8), 'pit': (8, 8), 'cost': (9, 9),
  'stat': (11, 11), 'mech': (17, 18), 'proc': (6, 7)}
 >>> [m.id for m in T.uncovered()]
 ['cache-indexed-by-position',

@@ -335,3 +335,182 @@ def e5_capacity(signal: np.ndarray, mask: np.ndarray, dollar_volume: np.ndarray,
                          f"this book holds about {cap:,.0f}, so the stated size would be a large "
                          "share of the volume in its own names and the edge becomes the trade"),
                  evidence=ev)
+
+def _leg_aware_book(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
+                    buyable: Optional[np.ndarray], shortable: Optional[np.ndarray],
+                    q: float, hold: int, long_short: bool, min_n: int) -> Dict[str, np.ndarray]:
+    """A quantile book where the two legs face different constraints.
+
+    Which positions are available is not one fact. A board locked up cannot be
+    bought and can be sold; a board locked down cannot be shorted and can be
+    covered. Applying one mask to both legs quietly removes the names the short
+    leg most wanted, which flatters the constrained book -- the first version of
+    this check did exactly that and reported a residual edge that was an
+    artifact of its own simplification.
+    """
+    sig, r = np.asarray(signal, float), np.asarray(ret, float)
+    T, N = sig.shape
+    w = np.zeros(N)
+    gross, turn = np.full(T, np.nan), np.zeros(T)
+    rebalances, blocked, wanted = [], 0, 0
+    last = -(10 ** 9)
+    for t in range(T - 1):
+        m = np.isfinite(sig[t]) & mask[t]
+        idx = np.flatnonzero(m)
+        if idx.size >= min_n and (t - last) >= hold:
+            k = max(1, int(idx.size * q))
+            order = idx[np.argsort(sig[t, idx])]
+            # Fill k slots from the top of the ranking, skipping what cannot be
+            # taken and going further down for the rest. That is what a desk
+            # does, and it matters: re-weighting the survivors instead would
+            # lever the book up exactly when half its picks were unavailable,
+            # and the leverage would show up as a residual edge that is an
+            # artifact of the accounting. The first version of this did that.
+            def _fill(cands, avail):
+                out, miss = [], 0
+                for j in cands:
+                    if avail is not None and not avail[t, j]:
+                        miss += 1
+                        continue
+                    out.append(j)
+                    if len(out) == k:
+                        break
+                return np.array(out, dtype=int), miss
+
+            longs, miss_l = _fill(order[::-1], buyable)
+            shorts, miss_s = (_fill(order, shortable) if long_short
+                              else (np.array([], dtype=int), 0))
+            wanted += 2 * k if long_short else k
+            blocked += miss_l + miss_s
+            new = np.zeros(N)
+            if longs.size:
+                new[longs] = 1.0 / k
+            if shorts.size:
+                new[shorts] = -1.0 / k
+            turn[t] = float(np.abs(new - w).sum() / 2.0)
+            w = new
+            last = t
+            rebalances.append(t)
+        gross[t] = float(w @ np.nan_to_num(r[t + 1], nan=0.0))
+    return {"gross": gross, "turnover": turn, "blocked": blocked, "wanted": wanted,
+            "rebalances": np.array(rebalances, dtype=int)}
+
+
+def e6_entry_constraints(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
+                         q: float = 0.1, hold: int = 1, long_short: bool = True,
+                         cost_bp: float = 0.0, dollar_volume: Optional[np.ndarray] = None,
+                         min_dollar_volume: Optional[float] = None,
+                         price_limit: Optional[float] = 0.0995,
+                         max_lost: float = 0.5, min_n: int = 30) -> "Check":
+    """E6 -- price the constraints on *getting in*, one at a time.
+
+    E1 asks whether the edge survives its turnover cost. This asks the question
+    that kills more of these than cost does: whether the book could have taken
+    the positions at all. A published decomposition of one event-driven book put
+    the annual cost of "cannot buy what is locked limit-up" at 10.8 percentage
+    points against a final 13.3 -- the largest single line, bigger than cost,
+    the liquidity floor and the position cap together.
+
+    That constraint is invisible in the usual setup because it is not a price,
+    it is an absence. A signal fires on the names that just jumped, those are
+    exactly the names sitting at the limit, the backtest fills them at a price
+    nobody could have paid, and every downstream number is then computed on a
+    book that was never available. Nothing in the statistics objects, because
+    nothing in the statistics is wrong.
+
+    The two legs face different constraints and are treated separately: a board
+    locked up cannot be bought, a board locked down cannot be shorted.
+
+    Three outcomes, and the middle one is the common case:
+
+      the edge is gone once the constraints bind          REJECTED
+      the edge survives but most of it was unavailable    INCONCLUSIVE -- what
+        was measured is not what could have been held, so the verdict on the
+        measured number does not transfer. Re-state the claim at the size that
+        remains and put it through the battery again; a residual that passed
+        nothing at its own size has not been judged.
+      the constraints barely bind                         PASS
+
+    Only the mechanical constraints are priced. A per-name weight cap does not
+    bind on an equal-weight quantile book, and execution delay is E3's question;
+    both are said rather than silently folded in.
+    """
+    from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check
+
+    sig, r = np.asarray(signal, float), np.asarray(ret, float)
+    base_mask = np.asarray(mask, bool)
+    ok = np.ones_like(base_mask, dtype=bool)
+
+    def _net(m, buyable, shortable):
+        pf = _leg_aware_book(sig, r, m, buyable, shortable, q, hold, long_short, min_n)
+        g = np.asarray(pf["gross"], float)
+        net = g - np.asarray(pf["turnover"], float) * (cost_bp / 1e4)
+        net = net[np.isfinite(net)]
+        return (float(net.mean() * 1e4) if net.size else np.nan), pf
+
+    base, _ = _net(base_mask, None, None)
+    if not np.isfinite(base):
+        return Check("E6", "economic", "entry constraints", INCONCLUSIVE, blocking=False,
+                     detail="the unconstrained book is not measurable on this panel")
+
+    rows: Dict[str, float] = {}
+    buyable = shortable = None
+    m = base_mask
+    blocked = wanted = 0
+
+    if price_limit:
+        rr = np.nan_to_num(r, nan=0.0)
+        up, down = rr >= float(price_limit), rr <= -float(price_limit)
+        if up.any() or down.any():
+            buyable, shortable = ~up, ~down
+            after, pf = _net(m, buyable, shortable)
+            rows["cannot enter a locked board"] = base - after
+            blocked, wanted = pf["blocked"], pf["wanted"]
+        else:
+            rows["cannot enter a locked board"] = np.nan
+
+    if dollar_volume is not None and min_dollar_volume:
+        before, _ = _net(m, buyable, shortable)
+        m = m & (np.nan_to_num(np.asarray(dollar_volume, float), nan=0.0)
+                 >= float(min_dollar_volume))
+        after, _ = _net(m, buyable, shortable)
+        rows["liquidity floor"] = before - after
+    else:
+        rows["liquidity floor"] = np.nan
+
+    priced = {k: v for k, v in rows.items() if np.isfinite(v)}
+    if not priced:
+        return Check("E6", "economic", "entry constraints", NA, blocking=False,
+                     detail="no entry constraint could be priced -- no locked prints in this "
+                            "panel and no liquidity floor declared. If the market this claim is "
+                            "about has daily price limits, the book has not been shown to be "
+                            "one that could have been entered")
+
+    final, _ = _net(m, buyable, shortable)
+    lost = (base - final) / abs(base) if base else np.nan
+    ev = {"unconstrained_bp": base, "constrained_bp": final, "share_lost": lost,
+          "marginal_bp": priced, "blocked_entries": blocked, "wanted_entries": wanted}
+    table = "; ".join(f"{k}: {v:+.2f}bp/step" for k, v in priced.items())
+    share = (f" {blocked}/{wanted} ({blocked / wanted:.1%}) of the positions the book wanted "
+             f"were unavailable." if wanted else "")
+
+    if base > 0 and final <= 0:
+        return Check("E6", "economic", "entry constraints", FAIL,
+                     statistic=final, threshold=0.0, evidence=ev,
+                     detail=(f"{base:+.2f}bp/step as measured, {final:+.2f}bp/step once the book "
+                             f"can only take the positions it could have taken -- {table}.{share} "
+                             f"The constraints are not a haircut on this result, they are part of "
+                             f"what it means, and it does not survive them"))
+    if base > 0 and np.isfinite(lost) and lost > max_lost:
+        return Check("E6", "economic", "entry constraints", INCONCLUSIVE,
+                     statistic=final, threshold=0.0, evidence=ev,
+                     detail=(f"{lost:.0%} of the edge was in positions the book could not have "
+                             f"taken: {base:+.2f}bp/step as measured, {final:+.2f}bp/step "
+                             f"available -- {table}.{share} The remainder may well be real, but "
+                             f"it is a different claim and nothing here has judged it at that "
+                             f"size. Put the constraints in the mask and run the battery again"))
+    return Check("E6", "economic", "entry constraints", PASS, blocking=False,
+                 statistic=final, threshold=0.0, evidence=ev,
+                 detail=(f"{base:+.2f}bp/step -> {final:+.2f}bp/step under the entry constraints "
+                         f"({table}).{share} A per-name weight cap does not bind on an "
+                         f"equal-weight book and was not simulated; execution delay is E3"))

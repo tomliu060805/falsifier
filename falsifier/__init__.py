@@ -5,7 +5,7 @@ battery of attacks along four axes -- process, point-in-time, mechanism, cost --
 and reports which one killed it. The best available outcome is SURVIVES, which
 means "not yet falsified" and never means "true".
 """
-from .econ import (cost_gate, e3_execution_delay, e4_cost_convention, e5_capacity,
+from .econ import (cost_gate, e3_execution_delay, e4_cost_convention, e5_capacity, e6_entry_constraints,
                    quantile_portfolio, trade_metrics)
 from .charts import plot_increment
 from .gauntlet import Study, run
@@ -44,7 +44,7 @@ __all__ = [
     "m6_input_freshness", "m7_event_integrity", "m8_threshold_or_slope",
     "m9_cross_sectional_independence", "s10_identification",
     "m10_stationarity", "m11_frequency_transfer", "m12_control_integrity",
-    "e3_execution_delay", "e4_cost_convention", "e5_capacity",
+    "e3_execution_delay", "e6_entry_constraints", "e4_cost_convention", "e5_capacity",
     "p3_frozen_config", "p4_fill_convention", "p5_external_facts", "p7_validator_control", "p8_hindsight_control",
     "p6_mechanism_implications", "default_control",
     "RollingFit", "Prior", "Index", "load_priors", "search_priors", "checklist", "render_priors", "validate_priors",
