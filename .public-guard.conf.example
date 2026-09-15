@@ -1,0 +1,19 @@
+# Denylist for verify_public.sh.
+#
+# Copy to `.public-guard.conf` (git-ignored) and replace the placeholders with
+# the real private paths and project names of the machine you work on. The
+# entries are grep -E alternations, so `|` separates them and regex
+# metacharacters must be escaped.
+#
+# Keeping the real list out of the repository is the point: a denylist that
+# names the private directories defeats itself once it is published.
+#
+# verify_public.sh refuses to run when `.public-guard.conf` is absent. That is
+# deliberate -- a guard that passes because it was not configured is worse than
+# no guard, since it reports "ok" either way.
+
+# Absolute paths that must never appear in a published file.
+FORBIDDEN='/home/YOUR_USER|/YOUR/SHARED/MOUNT|/YOUR/DATA/MOUNT|YOUR_PRIVATE_RECORD_DIR'
+
+# Private project / repository names that must never appear in a published file.
+PROJECTS='your-private-project-a|your-private-project-b'

@@ -8,15 +8,35 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
-FORBIDDEN='/home/YOUR_USER|/YOUR/SHARED/MOUNT|/YOUR/DATA/MOUNT|YOUR_PRIVATE_RECORD_DIR'
-PROJECTS='your-private-project-a|your-private-project-b'
+# The denylist itself names private paths and private projects, so it lives in
+# `.public-guard.conf`, which is git-ignored. Publishing the list would leak
+# exactly what the list exists to protect. Copy `.public-guard.conf.example` and
+# fill it in on each machine.
+#
+# A missing config is a hard error, never a pass: a guard that reports "ok"
+# because it was never configured is the one failure this script cannot afford.
+CONF="$HERE/.public-guard.conf"
+if [[ ! -f "$CONF" ]]; then
+  echo "BAD  $CONF is missing -- the guard cannot run unconfigured."
+  echo "     cp .public-guard.conf.example .public-guard.conf  and fill it in."
+  echo "NOT SAFE TO PUSH"
+  exit 1
+fi
+# shellcheck source=/dev/null
+source "$CONF"
+if [[ -z "${FORBIDDEN:-}" || -z "${PROJECTS:-}" ]]; then
+  echo "BAD  $CONF defines no FORBIDDEN/PROJECTS patterns -- refusing to run."
+  echo "NOT SAFE TO PUSH"
+  exit 1
+fi
 bad=0
 
 scan () {
   local what="$1" pat="$2"
   local hits
   hits=$(grep -rInE "$pat" . --exclude-dir=.git --exclude-dir=__pycache__ \
-         --exclude-dir='*.egg-info' --exclude=verify_public.sh 2>/dev/null)
+         --exclude-dir='*.egg-info' --exclude=verify_public.sh \
+         --exclude='.public-guard.conf' --exclude='.public-guard.conf.example' 2>/dev/null)
   if [[ -n "$hits" ]]; then
     echo "BAD  $what:"; echo "$hits" | sed 's/^/     /'; bad=1
   else

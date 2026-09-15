@@ -9,3 +9,11 @@ out/
 !examples/*.json
 .ipynb_checkpoints/
 calibration/
+
+# Local denylist for verify_public.sh (names private paths -- never publish)
+.public-guard.conf
+
+# Secrets / local environment
+.env
+.env.*
+!.env.example
