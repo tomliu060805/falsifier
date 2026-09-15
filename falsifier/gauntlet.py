@@ -64,6 +64,11 @@ class Study:
     the contract itself. Supplying it turns E3 from a hint into a verdict."""
     price_source: str = "tradable"
     """'tradable', 'index' or 'synthetic'. Declaring 'index' switches on E3."""
+    universe: str = ""
+    """Which index membership this panel is, if it is one -- "csi_2000", "csi_300".
+    M14 checks it against the index's publication date, because two stores on
+    this machine carry constituent history from years before the index existed."""
+
     min_dollar_volume: Optional[float] = None
     """A liquidity floor the book would actually enforce. E6 prices it."""
     price_limit: Optional[float] = 0.0995
@@ -365,6 +370,9 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(robust.m12_control_integrity(study.controls, study.control_names,
                                          sig, fwd, study.mask, horizon=study.horizon,
                                          min_n=study.min_n))
+    rep.add(robust.m14_universe_provenance(
+        study.universe,
+        str(study.dates[0]) if study.dates is not None and len(study.dates) else None))
     rep.add(mech.m1_matched_null(sig, fwd, study.mask, study.covariates,
                                  n_draws=n_draws, seed=seed + 2, min_n=study.min_n))
     rep.add(mech.m3_orthogonalize(sig, fwd, study.mask, study.controls,
@@ -401,6 +409,11 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     pf = econ.quantile_portfolio(sig, study.ret, study.mask, q=study.quantile,
                                  hold=study.horizon, long_short=study.long_short,
                                  min_n=study.min_n)
+    _g = np.asarray(pf["gross"], float); _g = _g[np.isfinite(_g)]
+    rep.add(robust.m13_implausible_magnitude(
+        ic=ic,
+        per_step_bp=float(_g.mean() * 1e4) if _g.size else None,
+        total_multiple=float(np.prod(1.0 + _g)) if _g.size else None))
     rep.add(econ.cost_gate(pf["gross"], pf["turnover"], study.cost_bp))
     rep.add(econ.trade_block_check(pf["gross"], pf["turnover"], study.cost_bp,
                                    hold=study.horizon, rebalances=pf["rebalances"]))

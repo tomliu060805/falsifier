@@ -96,6 +96,8 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `M10` | stationarity of the relationship | a frozen fit that was right about its own window | `retrained` |
 | | `M11` ~ | transfer across frequency | a conclusion carried to a cadence nobody measured | `claimed_strides` |
 | | `M12` control integrity | orthogonalised against a piece of the answer | controls |
+| | `M13` ~ | implausible magnitude | a number too large to be about the market, and the checklist to run before reading it as a result | — |
+| | `M14` universe provenance | constituent history from before the index existed | `universe` + `dates` |
 | **economic** | `E1` net of cost | an edge smaller than the turnover it needs | cost in bp |
 | | `E2` per-trade block | a year of P&L made on four days | — |
 | | `E3` execution delay | a stale print or a spread bouncing back | `tradable_ret` |
@@ -325,7 +327,7 @@ Almost every mode names a check that catches it:
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
 {'null': (8, 8), 'pit': (8, 8), 'cost': (9, 9),
- 'stat': (11, 11), 'mech': (17, 18), 'proc': (6, 7)}
+ 'stat': (11, 11), 'mech': (20, 21), 'proc': (7, 8)}
 >>> [m.id for m in T.uncovered()]
 ['cache-indexed-by-position',
  'fields-from-inconsistent-sources']

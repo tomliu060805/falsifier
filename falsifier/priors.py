@@ -236,3 +236,93 @@ def validate(priors: Optional[Sequence[Prior]] = None,
         if p.superseded_by and p.superseded_by not in ids:
             problems["superseded_by_missing"].append(f"{p.id} -> {p.superseded_by}")
     return {k: v for k, v in problems.items() if v}
+
+
+def append(record: Dict[str, object], path: Optional[str] = None,
+           dry_run: bool = False) -> Dict[str, object]:
+    """Add one verdict to the record, and report what it changed.
+
+    The loop this package is built around only closes if this step happens, and
+    until now it was a text editor and a promise. What made it worth automating
+    is not the writing -- it is the four things that have to happen *after* the
+    write and never did:
+
+      the cause of death has to key to the taxonomy, and when it does not, that
+      is the finding: either the record is vague or the taxonomy is short a mode;
+
+      the id has to be new, because a duplicate silently replaces nothing and
+      quietly double-counts in every distribution;
+
+      the record has to be readable -- a lesson under twenty characters teaches
+      nothing and is worse than no record, because it occupies the slot;
+
+      and the shape of the library moves. The most frequent cause of death is
+      what a new study should check first, and it has changed twice: it was
+      `null-random-structure-wins`, then `signal-duplicates-existing`, now
+      `cost-eats-it`. Nobody would have noticed without printing it.
+
+    Returns a summary; raises ValueError if the record cannot go in. Set
+    `dry_run` to see what would happen without writing.
+    """
+    ps = load(path)
+    before = Counter(m for p in ps if p.is_live() for m in p.killed_by)
+    rid = str(record.get("id", "")).strip()
+    if not rid:
+        raise ValueError("a record needs an id")
+    if any(p.id == rid for p in ps):
+        raise ValueError(f"id {rid!r} is already in the record -- pick another, or you are "
+                         f"editing rather than appending")
+    try:
+        cand = Prior(**record)                        # type: ignore[arg-type]
+    except TypeError as exc:
+        raise ValueError(f"the record does not fit the schema: {exc}")
+
+    problems = validate(list(ps) + [cand])
+    mine = {k: [x for x in v if rid in str(x)] for k, v in problems.items()}
+    mine = {k: v for k, v in mine.items() if v}
+    if mine:
+        hint = ""
+        if "unknown_mode" in mine:
+            hint = ("  This is the useful failure: a cause of death that keys to nothing means "
+                    "either the record is vague or `taxonomy` is short a mode. Backfilling this "
+                    "library has twice turned up modes it did not have, and that is the "
+                    "intended direction of traffic -- add the mode, then add the record.")
+        raise ValueError(f"the record will not go in as written: {mine}.{hint}")
+
+    if not dry_run:
+        p = Path(path or os.environ.get("FALSIFIER_PRIORS", "priors"))
+        target = p / "verdicts.jsonl" if p.is_dir() else p
+        with open(target, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    after = Counter(before)
+    after.update(cand.killed_by)
+    top_before = [m for m, _ in before.most_common(3)]
+    top_after = [m for m, _ in after.most_common(3)]
+    return {"id": rid, "written": not dry_run,
+            "records": len(ps) + (0 if dry_run else 1),
+            "projects": len({p.project for p in ps} | {cand.project}),
+            "top_causes": top_after,
+            "top_changed": top_before != top_after,
+            "new_mode_for_this_project": cand.project not in {p.project for p in ps}}
+
+
+def render_append(summary: Dict[str, object], width: int = 96) -> str:
+    rule = "=" * width
+    out = [rule, f"recorded: {summary['id']}"
+                 + ("" if summary["written"] else "   (dry run -- nothing written)"), rule, ""]
+    out.append(f"  the record now holds {summary['records']} verdicts over "
+               f"{summary['projects']} projects")
+    if summary.get("new_mode_for_this_project"):
+        out.append("  first verdict from this project")
+    out.append(f"  what a new study should check first: {', '.join(summary['top_causes'])}")
+    if summary.get("top_changed"):
+        out.append("  ** the most frequent causes of death changed with this record **")
+        out.append("  That is the library telling you where the next study is most likely to")
+        out.append("  die, and it has moved twice already. Worth a look.")
+    out += ["", rule,
+            "If this study also turned up a way of being wrong the taxonomy does not have,",
+            "add the mode now rather than keying the record to the nearest thing that fits --",
+            "an approximate cause of death teaches the wrong lesson to whoever retrieves it.",
+            rule]
+    return "\n".join(out)

@@ -25,10 +25,12 @@ from .robust import (default_control, s5_seed_stability,
                      m7_event_integrity, m8_threshold_or_slope, s7_input_staleness,
                      m9_cross_sectional_independence, s8_knob_monotonicity,
                      s9_label_persistence, s10_identification,
-                     m10_stationarity, m11_frequency_transfer, m12_control_integrity)
+                     m10_stationarity, m11_frequency_transfer, m12_control_integrity,
+                     m13_implausible_magnitude, m14_universe_provenance)
 from .priors import (Index, Prior, checklist, load as load_priors,
                      render as render_priors, search as search_priors,
-                     validate as validate_priors)
+                     validate as validate_priors,
+                     append as append_prior, render_append)
 from .taxonomy import MODES, BY_ID, Mode, by_family, coverage, uncovered
 from .seal import SealedSplit, SealError, p9_panel_respects_seal
 from .strategy import (StrategyStudy, backtest, free_selection_null,
@@ -44,10 +46,11 @@ __all__ = [
     "m6_input_freshness", "m7_event_integrity", "m8_threshold_or_slope",
     "m9_cross_sectional_independence", "s10_identification",
     "m10_stationarity", "m11_frequency_transfer", "m12_control_integrity",
+    "m13_implausible_magnitude", "m14_universe_provenance",
     "e3_execution_delay", "e6_entry_constraints", "e4_cost_convention", "e5_capacity",
     "p3_frozen_config", "p4_fill_convention", "p5_external_facts", "p7_validator_control", "p8_hindsight_control",
     "p6_mechanism_implications", "default_control",
-    "RollingFit", "Prior", "Index", "load_priors", "search_priors", "checklist", "render_priors", "validate_priors",
+    "RollingFit", "Prior", "Index", "load_priors", "search_priors", "checklist", "render_priors", "validate_priors", "append_prior", "render_append",
     "MODES", "BY_ID", "Mode", "by_family", "coverage", "uncovered",
     "Increment", "excess", "render_yearly", "i1_incremental_contribution",
     "i2_increment_null", "plot_increment", "run_increment",

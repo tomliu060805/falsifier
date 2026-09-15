@@ -866,3 +866,146 @@ def m12_control_integrity(controls: Sequence[np.ndarray], names: Sequence[str],
     return Check("M12", "mechanistic", "control integrity", PASS, evidence=rows,
                  detail=f"{len(labels)} control(s) are timestamped ahead of the label and none "
                         f"outpredicts the signal")
+
+
+# Numbers past which the answer is almost never "the signal is very good".
+# Each bound is set where this record has an incident on the other side of it.
+IMPLAUSIBLE = {
+    "rank_ic": 0.30,        # a cross-sectional rank IC above this is a leak, not an edge
+    "per_step_bp": 60.0,    # mean per-step long-short return
+    "total_x": 1000.0,      # cumulative multiple over the panel
+}
+
+
+def m13_implausible_magnitude(ic: Optional[np.ndarray] = None,
+                              per_step_bp: Optional[float] = None,
+                              total_multiple: Optional[float] = None,
+                              bounds: Optional[Dict[str, float]] = None) -> Check:
+    """M13 -- the number is too large to be about the market.
+
+    Every check in this battery attacks the claim. This one attacks the data,
+    and it is here because the most expensive hours in this record were spent
+    improving a model that was fitting a defect.
+
+    The rule the incidents teach: **when the number is absurd, it is a data
+    question, not a model question.** Daily equal-weight rebalancing on
+    micro-caps once produced a cumulative multiple of 498,424 -- not a bug in
+    the strategy, a bug in what "return" meant for names that barely trade. An
+    unadjusted close turned a +1.40% day into -28.4%, and cost eleven
+    percentage points a year until someone checked a single stock by hand. A
+    `nan_to_num` turned an inf into 1.8e308 and poisoned a cumulative sum. A
+    precision of 1.00 was a trigger list filtered with the outcome.
+
+    So this reports the checklist rather than a diagnosis, in the order the
+    incidents happened:
+
+      1. the return definition -- is it close/pre_close, or a raw close that
+         ignores dividends and splits?
+      2. non-finite values -- inf, and anything that has been through
+         `nan_to_num`, which turns inf into 1.8e308 rather than into zero
+      3. bad prints -- spike-and-revert, synthetic series, stitched contracts
+      4. the universe -- does it contain names that do not trade, and did the
+         index it names exist over this period at all?
+      5. alignment -- slide the feature and see where the score first steps up
+      6. the weight convention -- decimal or percent; one project was out by
+         a factor of a hundred
+
+    Advisory, because a legitimately huge number is possible -- on a tiny
+    universe, over a short window, in a leveraged instrument. What it will not
+    let happen is that the number is read as a finding before the data has been
+    looked at.
+    """
+    lim = dict(IMPLAUSIBLE, **(bounds or {}))
+    hits, seen = [], {}
+    if ic is not None:
+        v = np.asarray(ic, float)
+        v = v[np.isfinite(v)]
+        if v.size:
+            m = float(np.abs(v.mean()))
+            seen["rank_ic"] = m
+            if m > lim["rank_ic"]:
+                hits.append(f"mean |rank IC| = {m:.3f} (> {lim['rank_ic']})")
+    if per_step_bp is not None and np.isfinite(per_step_bp):
+        seen["per_step_bp"] = float(per_step_bp)
+        if abs(per_step_bp) > lim["per_step_bp"]:
+            hits.append(f"{per_step_bp:+.1f}bp per step (> {lim['per_step_bp']})")
+    if total_multiple is not None and np.isfinite(total_multiple):
+        seen["total_x"] = float(total_multiple)
+        if total_multiple > lim["total_x"]:
+            hits.append(f"cumulative x{total_multiple:,.0f} (> {lim['total_x']:,.0f})")
+
+    if not seen:
+        return Check("M13", "mechanistic", "implausible magnitude", NA, blocking=False,
+                     detail="nothing measurable was supplied to size-check")
+    if not hits:
+        return Check("M13", "mechanistic", "implausible magnitude", PASS, blocking=False,
+                     evidence=seen,
+                     detail="the reported magnitudes are within what a market can produce: "
+                            + ", ".join(f"{k}={v:.4g}" for k, v in seen.items()))
+    return Check("M13", "mechanistic", "implausible magnitude", FAIL, blocking=False,
+                 evidence=seen | {"exceeded": hits},
+                 detail=("; ".join(hits) + ". **Go and look at the data before reading this as "
+                         "a result** -- at this size the answer is almost never that the signal "
+                         "is very good. In order: (1) is the return close/pre_close or a raw "
+                         "unadjusted close; (2) any inf, or anything that went through "
+                         "nan_to_num, which makes inf into 1.8e308; (3) spike-and-revert or "
+                         "synthetic prints; (4) does the universe contain names that do not "
+                         "trade, and did the index it names exist over this period; "
+                         "(5) alignment -- slide the feature and find where the score first "
+                         "steps up; (6) weights in decimals or percent"))
+
+
+def m14_universe_provenance(universe: str = "", first_date: Optional[str] = None,
+                            launched: Optional[Dict[str, str]] = None) -> Check:
+    """M14 -- did the universe exist over the period it was tested on?
+
+    An index published in 2023 whose constituent file goes back to 2014 is not
+    a record of what the index held. It is the vendor applying today's
+    methodology backwards, with the benefit of knowing what that methodology was
+    designed to select -- and in the two cases on this machine the reconstructed
+    stretch is nine years and three years respectively, with nothing in the
+    store to say so.
+
+    What it costs is specific. Nobody could have held that universe, so the
+    result is not tradable over the reconstructed period; and nobody else's
+    result on it is comparable, so a number that looks like a contradiction of
+    the literature may be a contradiction of the universe instead.
+
+    Pass `universe` (the index key) and the panel's first date. Blocking: a
+    claim about a period when the thing did not exist has not been judged, it
+    has been mis-stated.
+    """
+    table = launched if launched is not None else _LAUNCHED
+    if not universe or not first_date or not table:
+        return Check("M14", "mechanistic", "universe provenance", NA, blocking=False,
+                     detail="no universe declared -- if the panel is an index membership, say "
+                            "which index, because two of them on this machine carry "
+                            "constituent history from years before they were published")
+    key = str(universe).strip().lower().replace("-", "_")
+    born = table.get(key)
+    if not born:
+        return Check("M14", "mechanistic", "universe provenance", INCONCLUSIVE, blocking=False,
+                     detail=f"{key} is not in the launch table, so whether this panel predates "
+                           f"the index is unknown. Add its publication date or say the universe "
+                           f"is not an index")
+    first = str(first_date).replace("-", "")[:8]
+    if first >= born:
+        return Check("M14", "mechanistic", "universe provenance", PASS,
+                     detail=f"{key} was published {born[:4]}-{born[4:6]}; the panel starts "
+                            f"{first[:4]}-{first[4:6]}, after it existed")
+    return Check("M14", "mechanistic", "universe provenance", FAIL,
+                 evidence={"universe": key, "launched": born, "panel_starts": first},
+                 detail=(f"{key} was published {born[:4]}-{born[4:6]} and this panel starts "
+                         f"{first[:4]}-{first[4:6]}. Everything before the launch is a "
+                         f"reconstruction -- the methodology applied backwards by someone who "
+                         f"knew what it was built to select. Nobody could have held it, and no "
+                         f"one else's result on that period is comparable to yours, so a finding "
+                         f"that contradicts the literature here may be contradicting the "
+                         f"universe instead. Start the panel at the launch date, or say plainly "
+                         f"that the earlier stretch is reconstructed"))
+
+
+_LAUNCHED: Dict[str, str] = {
+    "csi_300": "20050408", "csi_500": "20070115", "csi_1000": "20141017",
+    "csi_2000": "20230811", "csi_a500": "20240923", "cybz": "20100601",
+}

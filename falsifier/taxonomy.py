@@ -229,6 +229,32 @@ MODES: Tuple[Mode, ...] = (
          "Index prints carry yesterday's close for names that have not traded; the "
          "effect grows monotonically as you go down in capitalisation.",
          ("E3",), "Rerun on a tradable instrument -- ETF or futures ticks, at the touch."),
+    Mode("absurd-number-is-a-data-question", "mech",
+         "the number is too large to be about the market",
+         "A result so good it is exciting -- a cumulative multiple in the hundreds of "
+         "thousands, a rank IC above 0.3, a precision of 1.00.",
+         "At that size the answer is almost never that the signal is very good. Daily "
+         "equal-weight rebalancing on names that barely trade produced 498,424x; an "
+         "unadjusted close turned a +1.40% day into -28.4% and cost eleven points a year; a "
+         "nan_to_num turned an inf into 1.8e308 and poisoned the cumulative sum. The "
+         "expensive mistake is not believing the number -- it is spending the next week "
+         "improving a model that is fitting a defect. **An absurd result is a data question, "
+         "not a model question.**",
+         ("M13",),
+         "Before anything else: the return definition, non-finite values, bad prints, whether "
+         "the universe trades, alignment, and whether the weights are decimals or percent."),
+    Mode("universe-predates-the-index", "mech",
+         "constituent history from before the index existed",
+         "A clean membership file covering ten years of an index.",
+         "The index was published two years ago. Everything before that is the vendor "
+         "applying today's methodology backwards, by someone who knew what that methodology "
+         "was built to select -- nine years of it for one index on this machine, with nothing "
+         "in the store to say so. Nobody could have held that universe, so nothing on the "
+         "reconstructed stretch is tradable; and nobody else's result on it is comparable, so "
+         "a finding that seems to contradict the literature may be contradicting the universe.",
+         ("M14",),
+         "Compare the panel's first date against the index's publication date before building "
+         "the universe."),
     Mode("synthetic-data-badprints", "mech", "bad prints in a constructed series",
          "A defensive overlay that avoids sharp drops beautifully.",
          "The drops are spike-and-revert artefacts of the construction, not market "

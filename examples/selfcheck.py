@@ -36,6 +36,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  universe_predates_index  an index that did not exist yet-> REJECTED by M14
   panel_saw_the_test     rows it was not allowed to see   -> REJECTED by P9
   bought_the_locked_board  a real edge you could not enter-> REJECTED by E6
   oracle_proposed_it     the idea source knew the future  -> REJECTED by P8
@@ -487,6 +488,40 @@ def identification_targets():
     ]
 
 
+def data_targets():
+    """A target for M14 -- the universe did not exist over the period tested.
+
+    Nothing is wrong with the signal, the panel or the arithmetic. The index
+    whose membership this panel claims to be was published years after the
+    panel starts, so the earlier stretch is the vendor applying today's
+    methodology backwards -- nine years of it for one index on this machine,
+    with nothing in the store to say so. Nobody could have held that universe,
+    and no one else's result on it is comparable, which is the part that bites:
+    a finding that looks like it contradicts the literature may be contradicting
+    the universe instead.
+
+    M13 has no target of its own and does not need one. It is advisory by
+    construction -- a legitimately huge number is possible on a small universe
+    over a short window -- and every deliberately-broken target here dies of
+    something sharper first. It is exercised by the unit tests instead.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+    # A panel that starts in 2014 and calls itself CSI 2000, published 2023-08.
+    days = np.array([f"2014-08-{1 + (i % 28):02d}" if i < 28 else
+                     f"{2014 + i // 250}-{1 + (i // 21) % 12:02d}-{1 + i % 28:02d}"
+                     for i in range(T_)])
+
+    return [
+        ("universe_predates_index", "REJECTED", "M14", F.Study(
+            claim="A trailing-window signal forecasts returns across the CSI 2000",
+            signal=honest, ret=ret, mask=mask, dates=days, horizon=5, cost_bp=1.0,
+            universe="csi_2000", covariates={"size": size_panel})),
+    ]
+
+
 def seal_targets():
     """A target for P9 -- the panel included rows it was not allowed to see.
 
@@ -904,7 +939,7 @@ def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
             + stationarity_targets() + identification_targets() + guard_targets()
             + hindsight_targets() + constraint_targets() + seal_targets()[0]
-            + artefact_targets()
+            + data_targets() + artefact_targets()
             + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
@@ -974,6 +1009,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in data_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
