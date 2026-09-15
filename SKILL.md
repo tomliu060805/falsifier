@@ -1,6 +1,6 @@
 ---
 name: falsify
-description: "Adversarially referee a quantitative research claim -- a factor, a signal, a timing rule, a paper replication, or an idea an LLM just proposed -- along four axes: process (pre-registration, sealed test period, whether the study's own data guards can be made to fail), point-in-time (truncation rebuild, label-shuffle refit, feature time-shift boundary location, label delay decay), mechanism (matched nulls, identity nulls, orthogonalisation against known factors, naive-baseline comparison, drift of the relationship under a frozen fit, transfer of the conclusion across frequency) and economics (net of turnover cost, per-trade block). Returns one verdict -- SURVIVES, REJECTED or INCONCLUSIVE -- naming the check that killed the claim. Use whenever a new signal, factor, strategy or research idea needs to be tested rather than believed, including Chinese requests such as 判负、证伪、零基准、前视审计、这个因子能不能用、这个想法靠不靠谱."
+description: "Adversarially referee a quantitative research claim -- a factor, a signal, a timing rule, a paper replication, or an idea an LLM just proposed -- along four axes: process (pre-registration, sealed test period, whether the study's own data guards can be made to fail, whether the source that proposed the idea already knew the outcome), point-in-time (truncation rebuild, label-shuffle refit, feature time-shift boundary location, label delay decay), mechanism (matched nulls, identity nulls, orthogonalisation against known factors, naive-baseline comparison, drift of the relationship under a frozen fit, transfer of the conclusion across frequency) and economics (net of turnover cost, per-trade block). Returns one verdict -- SURVIVES, REJECTED or INCONCLUSIVE -- naming the check that killed the claim. Use whenever a new signal, factor, strategy or research idea needs to be tested rather than believed, including Chinese requests such as 判负、证伪、零基准、前视审计、这个因子能不能用、这个想法靠不靠谱."
 ---
 
 # Falsify a research claim
@@ -10,6 +10,11 @@ person proposing it already did, and it is why the claim needs a referee.
 
 ## Rules of engagement
 
+0a. **The idea's source has an information boundary, and truncating the price
+   database does not establish it.** Training corpora, search results and tool
+   output all carry later events back across it. Ask where the hypothesis came
+   from; if the answer is a model or a search, `P8` is not optional, because no
+   point-in-time audit downstream can see this one.
 0. **Nothing measured on a panel without power is a finding, in either
    direction.** When `S6` (positive control) is flat, the run stops and the
    verdict is INCONCLUSIVE — report it as "nothing was established", never as
@@ -61,6 +66,12 @@ person proposing it already did, and it is why the claim needs a referee.
    `corruptions` map that injects the defects it claims to catch. `P7` requires
    it to actually fail on them: a guard that cannot fail and a guard with
    nothing to report produce the same output on every real run.
+   **If the idea came from a model, a search, or a knowledge base, say so and
+   pass `ask`** with `hindsight_probes` (questions whose answers became knowable
+   only after `information_boundary`) and `hindsight_controls` (questions from
+   before it). `P8` is the only check that reaches a leak in *what was proposed*
+   rather than in how it was computed -- and that leak makes `A0` and `A1` come
+   back clean on a pipeline that was aimed by the answer.
    Say whether the production pipeline refits or ships a frozen fit
    (`retrained=True/False`): a relationship that moves is the reason a rolling
    pipeline exists and a defect in a frozen one, and `M10` cannot tell which is

@@ -19,7 +19,7 @@ from .nulls import (cs_shuffle, empirical_p, identity_permutation,
 from .pit import a0_truncation, a1_label_shuffle_refit, a2_feature_shift, a3_label_delay, audit
 from .pipeline import RollingFit
 from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
-                     p5_external_facts, p7_validator_control, p6_mechanism_implications)
+                     p5_external_facts, p7_validator_control, p8_hindsight_control, p6_mechanism_implications)
 from .robust import (default_control, s5_seed_stability,
                      m5_print_quality, m6_input_freshness, s6_positive_control,
                      m7_event_integrity, m8_threshold_or_slope, s7_input_staleness,
@@ -45,7 +45,7 @@ __all__ = [
     "m9_cross_sectional_independence", "s10_identification",
     "m10_stationarity", "m11_frequency_transfer", "m12_control_integrity",
     "e3_execution_delay", "e4_cost_convention", "e5_capacity",
-    "p3_frozen_config", "p4_fill_convention", "p5_external_facts", "p7_validator_control",
+    "p3_frozen_config", "p4_fill_convention", "p5_external_facts", "p7_validator_control", "p8_hindsight_control",
     "p6_mechanism_implications", "default_control",
     "RollingFit", "Prior", "Index", "load_priors", "search_priors", "checklist", "render_priors", "validate_priors",
     "MODES", "BY_ID", "Mode", "by_family", "coverage", "uncovered",

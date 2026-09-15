@@ -36,6 +36,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  oracle_proposed_it     the idea source knew the future  -> REJECTED by P8
   guard_cannot_fire      a gate that could never go red   -> REJECTED by P7
   unidentified_fit       a ridge, not a point             -> REJECTED by S10
   leaky_control          orthogonalised against the answer-> REJECTED by M12
@@ -484,6 +485,52 @@ def identification_targets():
     ]
 
 
+def hindsight_targets():
+    """A target for P8 -- the idea came from something that already knew.
+
+    The study underneath is the honest survivor: a real trailing-window signal,
+    causally built, that passes every audit in the battery. That is the point.
+    The contamination is not in the pipeline and no downstream check can reach
+    it, because the pipeline was pointed in the right direction by a source that
+    had already seen the outcome.
+
+    The probes follow Jump's example: a question whose answer became knowable
+    only after the declared boundary, asked of a source that answers it anyway.
+    Control probes from before the boundary are supplied as well, because a
+    source that answers nothing looks exactly like a source with an honest
+    boundary -- that is S6's argument, and it applies in this direction too.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+
+    # Answers that only exist on the far side of the boundary, and answers that
+    # any source reasoning from before it should still have.
+    after = {"the first-day close of the listing on 2026-06-12": 160.95,
+             "the index level at the close of 2026-06-12": 21550.0}
+    before = {"the number of US market-wide halts in March 2020": 4,
+              "the ticker of the CSI 300 index": "000300"}
+
+    def leaks(question):
+        for k, v in list(after.items()) + list(before.items()):
+            if k in question:
+                return f"about {v}"
+        return "I cannot know that"
+
+    return [
+        ("oracle_proposed_it", "REJECTED", "P8", F.Study(
+            claim="A trailing-window signal forecasts returns (proposed by a source "
+                  "reasoning, it says, from before 2026-06-05)",
+            signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel},
+            ask=leaks, information_boundary="2026-06-05",
+            hindsight_probes=[{"question": q, "answer": v, "tol": 0.01}
+                              for q, v in after.items()],
+            hindsight_controls=[{"question": q, "answer": v} for q, v in before.items()])),
+    ]
+
+
 def guard_targets():
     """A target for P7 -- the guard that could never have failed.
 
@@ -775,7 +822,7 @@ def pipeline_targets():
 def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
             + stationarity_targets() + identification_targets() + guard_targets()
-            + artefact_targets()
+            + hindsight_targets() + artefact_targets()
             + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
@@ -845,6 +892,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in hindsight_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)

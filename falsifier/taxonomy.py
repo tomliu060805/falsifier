@@ -352,6 +352,20 @@ MODES: Tuple[Mode, ...] = (
          ("S10",), "Rerun the identical fit from two different starting points. A parameter "
              "that follows the start is not estimated. Check which parameters move and "
              "which do not: often one is identified and the other is along for the ride."),
+    Mode("hypothesis-contaminated-by-hindsight", "proc",
+         "the idea came from something that already knew the answer",
+         "A hypothesis that arrives well-aimed, and a pipeline that audits clean end to end.",
+         "Truncating the price database at a date does not establish that the system has "
+         "never seen what happened next. Training corpora, search results, retrieved "
+         "documents and tool output all carry later events back across the boundary, so the "
+         "hypothesis can be formed with the outcome in hand while every line of code that "
+         "tests it is scrupulously point-in-time. A0 and A1 then audit a pipeline that was "
+         "pointed in the right direction for the wrong reason, and both come back clean -- "
+         "the leak is in what was proposed, not in how it was computed, and no downstream "
+         "audit reaches it.",
+         ("P8",),
+         "Ask the source a question whose answer became knowable only after the boundary it "
+         "claims to reason from, plus one from before it so that silence can be read."),
     Mode("check-structurally-cannot-fire", "proc", "a check that could never have failed",
          "A validation step that has passed on every run since it was written.",
          "It cannot fail. A no-NaN assertion written with `~isfinite` runs on a nullable "

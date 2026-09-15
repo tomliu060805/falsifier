@@ -43,6 +43,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `P4` fill convention declared | an engine that matches on the signal's own bar | a declaration |
 | | `P5` external fact check | an error two implementations share | a fact from outside |
 | | `P7` validator control | a guard that could never have failed | `validator` + `corruptions` |
+| | `P8` hindsight control | the idea came from something that knew the answer | `ask` + probes |
 | **statistical** | `A0` truncation rebuild | the signal used data from after its timestamp | `recompute_at` |
 | | `A1` label-shuffle refit | something fitted on the full sample | `refit` |
 | | `A2` feature time-shift | an off-by-one between signal and label | — |
@@ -295,7 +296,7 @@ Almost every mode names a check that catches it:
 >>> from falsifier import taxonomy as T
 >>> T.coverage()
 {'null': (8, 8), 'pit': (8, 8), 'cost': (7, 7),
- 'stat': (11, 11), 'mech': (17, 18), 'proc': (5, 6)}
+ 'stat': (11, 11), 'mech': (17, 18), 'proc': (6, 7)}
 >>> [m.id for m in T.uncovered()]
 ['cache-indexed-by-position',
  'fields-from-inconsistent-sources']

@@ -15,7 +15,7 @@ import numpy as np
 from . import econ, mech, pit, robust
 from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
                      p5_external_facts, p6_mechanism_implications,
-                     p7_validator_control)
+                     p7_validator_control, p8_hindsight_control)
 from .seal import SealedSplit
 from .stats import deflated_threshold, forward_returns, ic_summary, rank_ic
 from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check, Report
@@ -98,6 +98,17 @@ class Study:
     bar_includes_signal_period: Optional[bool] = None
     implication_results: Optional[Dict[str, str]] = None
     """Each pre-registered implication mapped to "held", "failed" or "untested"."""
+    ask: Optional[Callable[[str], str]] = None
+    """Query the source that proposed this hypothesis -- a model, a search tool,
+    a knowledge base. P8 uses it to find out whether that source already knew
+    what happened after the date the study claims to reason from."""
+    hindsight_probes: Sequence[Dict[str, Any]] = ()
+    """Questions whose answers became knowable only after `information_boundary`."""
+    hindsight_controls: Sequence[Dict[str, Any]] = ()
+    """Questions from before it, which the source ought to answer. Without these
+    a silent source looks identical to a clean one."""
+    information_boundary: str = ""
+
     validator: Optional[Callable[[Any], Any]] = None
     """A data check this study relies on: validator(data) is truthy when the data
     is acceptable. P7 requires it to be capable of failing."""
@@ -179,6 +190,8 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
     rep.add(p4_fill_convention(study.fill_convention, study.bar_includes_signal_period))
     rep.add(p5_external_facts(study.external_facts))
     rep.add(p7_validator_control(study.validator, study.corruptions, study.validator_data))
+    rep.add(p8_hindsight_control(study.ask, study.hindsight_probes,
+                                 study.hindsight_controls, study.information_boundary))
     if seal is not None:
         st = seal.status()
         rep.add(Check("P2", "process", "test seal", PASS if st is None else INCONCLUSIVE,

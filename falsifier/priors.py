@@ -65,10 +65,27 @@ class Prior:
     date: str = ""
     source: str = ""
 
+    withdrawn: str = ""
+    """Why this verdict no longer stands, if it does not. A library that only
+    grows teaches its own mistakes forever: four conclusions here were overturned
+    by later work, and until this field existed the retraction lived in prose
+    inside the lesson, where nothing could act on it."""
+    superseded_by: str = ""
+    """The id of the record that replaced it, when one did. Withdrawal and
+    replacement are different facts -- a verdict can be withdrawn because the
+    evidence was misread and never replaced by anything."""
+    withdrawn_date: str = ""
+
+    def is_live(self) -> bool:
+        return not self.withdrawn
+
     def text(self) -> str:
+        # The withdrawal text is indexed too. A retracted conclusion is exactly
+        # what you want surfaced when you are about to re-derive it, so it stays
+        # searchable -- it is removed from the advice, not from the record.
         return " ".join([self.claim, self.lesson, self.evidence,
                          " ".join(self.applies_to), " ".join(self.killed_by),
-                         self.project])
+                         self.project, self.withdrawn])
 
     def modes(self) -> List[Mode]:
         return [BY_ID[m] for m in self.killed_by if m in BY_ID]
@@ -135,7 +152,8 @@ def checklist(hits: Iterable[Tuple[float, Prior]]) -> List[Mode]:
     """
     counts: Counter = Counter()
     for _, prior in hits:
-        counts.update(prior.killed_by)
+        if prior.is_live():          # a trap that turned out not to be one is not a trap
+            counts.update(prior.killed_by)
     return [BY_ID[mid] for mid, _ in counts.most_common() if mid in BY_ID]
 
 
@@ -151,7 +169,15 @@ def render(query: str, hits: Sequence[Tuple[float, Prior]], width: int = 96) -> 
     for score, p in hits:
         out.append("")
         mark = {"REJECTED": "REJECTED", "SURVIVES": "SURVIVED", "PARTIAL": "PARTIAL "}.get(p.verdict, p.verdict)
+        if not p.is_live():
+            mark = "WITHDRAWN"
         out.append(f"  [{mark}] {p.claim}")
+        if not p.is_live():
+            out.append(f"      !! this verdict no longer stands: {p.withdrawn}")
+            if p.superseded_by:
+                out.append(f"      !! replaced by: {p.superseded_by}")
+            out.append(f"      !! shown because you are close to re-deriving it, "
+                       f"not as a trap to check")
         out.append(f"      {p.project}{(' / ' + p.date) if p.date else ''}   (relevance {score:.1f})")
         if p.killed_by:
             out.append(f"      killed by  : {', '.join(p.killed_by)}")
@@ -185,8 +211,10 @@ def validate(priors: Optional[Sequence[Prior]] = None,
     ps = list(priors) if priors is not None else load(path)
     known = set(BY_ID)
     problems: Dict[str, List[str]] = {"unknown_mode": [], "no_cause": [], "thin": [],
-                                      "duplicate_id": []}
+                                      "duplicate_id": [], "withdrawn_without_reason": [],
+                                      "superseded_by_missing": []}
     seen = set()
+    ids = {p.id for p in ps}
     for p in ps:
         if p.id in seen:
             problems["duplicate_id"].append(p.id)
@@ -198,4 +226,13 @@ def validate(priors: Optional[Sequence[Prior]] = None,
             problems["no_cause"].append(p.id)
         if len(p.lesson) < 20 or len(p.evidence) < 10:
             problems["thin"].append(p.id)
+        # A retraction with no reason is worse than none: it deletes the claim
+        # from the advice without saying what was wrong, so nobody can tell
+        # whether the mistake would be repeated.
+        if p.superseded_by and not p.withdrawn:
+            problems["withdrawn_without_reason"].append(p.id)
+        if not p.is_live() and len(p.withdrawn) < 20:
+            problems["withdrawn_without_reason"].append(p.id)
+        if p.superseded_by and p.superseded_by not in ids:
+            problems["superseded_by_missing"].append(f"{p.id} -> {p.superseded_by}")
     return {k: v for k, v in problems.items() if v}

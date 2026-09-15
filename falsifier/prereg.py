@@ -7,12 +7,13 @@ claimed to be answering.
 """
 from __future__ import annotations
 
+import math
 import hashlib
 import json
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 
 @dataclass
@@ -332,3 +333,137 @@ def p7_validator_control(validator: Optional[Callable[[Any], Any]] = None,
     return Check("P7", "process", "validator control", PASS, evidence=ev,
                  detail=f"the validator fails on every injected defect "
                         f"({len(caught)}/{len(corruptions)}): {', '.join(caught)}")
+
+
+def _p8_matches(response: str, probe: Dict[str, Any]) -> bool:
+    """Did the answer actually land, as opposed to merely being produced?"""
+    import re as _re
+
+    accept = probe.get("accept")
+    if callable(accept):
+        try:
+            return bool(accept(response))
+        except Exception:
+            return False
+    want = probe.get("answer")
+    text = (response or "").strip()
+    if not text:
+        return False
+    if isinstance(want, (int, float)) and not isinstance(want, bool):
+        tol = float(probe.get("tol", 0.0))
+        nums = [float(x) for x in _re.findall(r"-?\d+(?:\.\d+)?", text.replace(",", ""))]
+        if not nums:
+            return False
+        w = float(want)
+        # Relative tolerance when one is given as a fraction, absolute otherwise.
+        lim = tol if tol >= 1 else abs(w) * tol
+        return any(abs(v - w) <= lim for v in nums)
+    return str(want).strip().lower() in text.lower()
+
+
+def p8_hindsight_control(ask: Optional[Callable[[str], str]] = None,
+                         after_boundary: Optional[Sequence[Dict[str, Any]]] = None,
+                         before_boundary: Optional[Sequence[Dict[str, Any]]] = None,
+                         boundary: str = "", alpha: float = 0.05) -> "Check":
+    """P8 -- does the source of the idea know things it should not?
+
+    A negative control, and the third of a family. S6 asks whether the panel can
+    detect an effect it is known to contain; P7 asks whether a guard can be made
+    to fail on a defect it claims to catch; P8 asks whether the thing that
+    proposed the hypothesis can answer a question from after the date it claims
+    to be reasoning from. The first two should succeed. This one should fail.
+
+    It exists because a study can be point-in-time clean in every line of its
+    code and still be contaminated before any code runs. Truncating the price
+    database at a date does not establish that the system has never seen what
+    happened next: training corpora, search results, retrieved documents and
+    tool output all carry later events back across the boundary. When the
+    hypothesis itself was proposed by something that already knew the answer,
+    A0 and A1 audit a pipeline that was pointed in the right direction for the
+    wrong reason, and they will both come back clean.
+
+    Two sets of probes, and the second is what makes the first readable:
+
+      `after_boundary`   questions whose answers became knowable only after
+                         `boundary`. Getting them right is the finding.
+      `before_boundary`  questions the source ought to be able to answer. If it
+                         cannot answer these either, then failing to answer the
+                         future says nothing about its boundary and everything
+                         about its willingness to answer -- the same trap S6
+                         exists to close, in the other direction.
+
+    Each probe is ``{"question", "answer"}`` plus optionally ``tol`` for a
+    numeric answer, ``accept`` for a custom matcher, and ``chance`` -- the
+    probability of getting it right by guessing, which must be declared
+    honestly. A yes/no probe at ``chance=0.5`` proves almost nothing on its own
+    and the arithmetic will say so; an exact closing price does not need many.
+    """
+    from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check
+
+    if ask is None or not after_boundary:
+        return Check("P8", "process", "hindsight control", NA, blocking=False,
+                     detail="no idea source and post-boundary probes supplied -- if this "
+                            "hypothesis came from a model, a search or a knowledge base, "
+                            "nothing here establishes that it did not already know the answer")
+
+    def _run(probes):
+        hit, asked = [], []
+        for pr in probes:
+            q = pr.get("question", "")
+            try:
+                resp = ask(q)
+            except Exception:
+                resp = ""
+            asked.append(q)
+            if _p8_matches(resp, pr):
+                hit.append(q)
+        return hit, asked
+
+    # Power first: a source that answers nothing is not a source with a boundary.
+    if before_boundary:
+        ctrl_hit, ctrl_asked = _run(before_boundary)
+        if len(ctrl_hit) * 2 < len(ctrl_asked):
+            return Check("P8", "process", "hindsight control", INCONCLUSIVE,
+                         evidence={"control_hit": len(ctrl_hit), "control_n": len(ctrl_asked)},
+                         detail=(f"the source answered only {len(ctrl_hit)}/{len(ctrl_asked)} "
+                                 f"questions from *before* {boundary or 'the boundary'}, so its "
+                                 f"silence on the ones after it says nothing about what it knows. "
+                                 f"Ask questions it should be able to answer, or ask differently"))
+    else:
+        ctrl_hit, ctrl_asked = [], []
+
+    hit, asked = _run(after_boundary)
+    k, n = len(hit), len(asked)
+    chances = [float(p.get("chance", 0.0)) for p in after_boundary]
+    c = sum(chances) / n if n else 0.0
+    # P(X >= k) under the declared guessing rate. With chance 0 declared and any
+    # hit at all this is zero, which is the honest reading of an exact answer to
+    # something unguessable -- and the reason `chance` has to be declared.
+    p_value = sum(math.comb(n, i) * (c ** i) * ((1 - c) ** (n - i))
+                  for i in range(k, n + 1)) if n else 1.0
+    ev = {"hit": hit, "n": n, "k": k, "chance": c, "p_value": p_value,
+          "control_hit": len(ctrl_hit), "control_n": len(ctrl_asked), "boundary": boundary}
+
+    if k and p_value <= alpha:
+        return Check("P8", "process", "hindsight control", FAIL,
+                     statistic=p_value, threshold=alpha, evidence=ev,
+                     detail=(f"the source answered {k}/{n} questions from after "
+                             f"{boundary or 'its declared boundary'} (p={p_value:.4f} under a "
+                             f"declared guessing rate of {c:.2f}): {'; '.join(hit[:3])}. "
+                             f"The boundary is not where it is claimed to be, so the hypothesis "
+                             f"cannot be treated as having been formed without the outcome -- "
+                             f"and no point-in-time audit downstream can repair that, because "
+                             f"the leak is in what was proposed, not in how it was computed"))
+    if k:
+        return Check("P8", "process", "hindsight control", INCONCLUSIVE, blocking=False,
+                     statistic=p_value, threshold=alpha, evidence=ev,
+                     detail=(f"{k}/{n} post-boundary probes were answered, but at a declared "
+                             f"guessing rate of {c:.2f} that is what chance produces "
+                             f"(p={p_value:.2f}). Use probes that cannot be guessed"))
+    return Check("P8", "process", "hindsight control", PASS, evidence=ev,
+                 detail=(f"none of {n} questions from after {boundary or 'the boundary'} were "
+                         f"answered"
+                         + (f", while {len(ctrl_hit)}/{len(ctrl_asked)} from before it were"
+                            if ctrl_asked else
+                            " -- but no control probes were supplied, so this has not been shown "
+                            "to be a boundary rather than a refusal to answer")))

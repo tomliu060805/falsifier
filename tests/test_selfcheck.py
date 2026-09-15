@@ -107,7 +107,7 @@ def test_matched_null_false_positive_rate(panel):
 def test_taxonomy_is_consistent():
     from falsifier import taxonomy as T
     assert len({m.id for m in T.MODES}) == len(T.MODES), "duplicate mode id"
-    known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7",
+    known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8",
              "A0", "A1", "A2", "A3",
              "S4", "S5", "S6", "S7", "S8", "S9", "S10",
              "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12",
@@ -668,3 +668,74 @@ def test_our_own_validator_can_be_made_to_fail():
          "a lesson too thin to teach": thin_lesson},
         clean)
     assert check.outcome == "PASS", check.detail
+
+
+def test_hindsight_control_reads_all_three_directions():
+    """P8 has to distinguish three sources, and the third is the one that matters.
+
+    A source that answers nothing looks exactly like a source with an honest
+    boundary. S6 exists because that confusion, in the other direction, turns
+    "we found nothing" into "there is nothing"; here it would turn "it would not
+    answer" into "it does not know". So a mute source is INCONCLUSIVE, not a
+    pass, and the control probes are what make that readable.
+    """
+    from falsifier.prereg import p8_hindsight_control
+
+    after = {"the close on the day after the boundary": 160.95}
+    before = {"the ticker of the CSI 300 index": "000300"}
+    probes = [{"question": q, "answer": v, "tol": 0.01} for q, v in after.items()]
+    controls = [{"question": q, "answer": v} for q, v in before.items()]
+
+    def leaks(q):
+        for k, v in list(after.items()) + list(before.items()):
+            if k in q:
+                return f"about {v}"
+        return "no idea"
+
+    def honest(q):
+        for k, v in before.items():
+            if k in q:
+                return str(v)
+        return "I cannot know that"
+
+    def mute(q):
+        return "I would rather not say"
+
+    assert p8_hindsight_control(leaks, probes, controls, "B").outcome == "FAIL"
+    assert p8_hindsight_control(honest, probes, controls, "B").outcome == "PASS"
+    assert p8_hindsight_control(mute, probes, controls, "B").outcome == "INCONCLUSIVE"
+    # Nothing supplied is NA and advisory, not a quiet pass.
+    na = p8_hindsight_control(None, None)
+    assert na.outcome == "NA" and not na.blocking
+
+
+def test_hindsight_control_respects_declared_guessing_rate():
+    """A coin-flip probe answered right is not evidence, and must not read as it."""
+    from falsifier.prereg import p8_hindsight_control
+
+    coin = [{"question": "did it go up", "answer": "yes", "chance": 0.5}]
+    ctrl = [{"question": "what is two plus two", "answer": "4"}]
+    check = p8_hindsight_control(lambda q: "yes" if "up" in q else "4", coin, ctrl, "B")
+    assert check.outcome == "INCONCLUSIVE" and not check.blocking, check.detail
+
+
+def test_withdrawn_verdict_leaves_the_advice_but_stays_findable():
+    """A retracted conclusion must stop being a trap without disappearing.
+
+    It is exactly what you want surfaced when you are about to re-derive it, so
+    it stays in the index; it is removed from the checklist, because a trap that
+    turned out not to be one is not a trap.
+    """
+    import falsifier as F
+
+    priors = F.load_priors()
+    dead = [p for p in priors if not p.is_live()]
+    assert dead, "no withdrawn record to check against"
+    p = dead[0]
+
+    hits = F.search_priors(p.claim, priors=priors, k=8)
+    assert any(h.id == p.id for _, h in hits), "a withdrawn record fell out of the index"
+    assert p.id not in {m.id for m in F.checklist(hits)}
+    live_modes = {m for _, h in hits if h.is_live() for m in h.killed_by}
+    assert {m.id for m in F.checklist(hits)} <= live_modes
+    assert F.render_priors(p.claim, hits).count("WITHDRAWN") >= 1
