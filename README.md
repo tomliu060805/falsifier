@@ -38,6 +38,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | **process** | `P0` pre-registration | a criterion chosen after seeing the number | a frozen `Prereg` |
 | | `P1` stated mechanism | a result with no economic story to test | — |
 | | `P2` test seal | a hold-out that has been read more than once | a `SealedSplit` |
+| | `P9` panel respects the seal | a split that was declared and a panel that ignored it | `dates` + `SealedSplit` |
 | | `P3` frozen config enforced | a frozen file nothing reads back | the recomputed values |
 | | `P6` mechanism implications | a story that was never tested past the number | tested implications |
 | | `P4` fill convention declared | an engine that matches on the signal's own bar | a declaration |

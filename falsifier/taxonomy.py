@@ -175,6 +175,19 @@ MODES: Tuple[Mode, ...] = (
          "Monotone improvement in training as a knob is turned.",
          "Validation moves monotonically the other way. The knob is fitting noise.",
          ("S8",), "Plot both segments against the knob before believing either."),
+    Mode("panel-includes-the-sealed-period", "proc",
+         "the split was declared and the data ignored it",
+         "A study with a clean train/valid/test split, a sealed test period, and an untouched "
+         "seal ledger.",
+         "The peek did not come from unsealing. A yearly diagnostic was printed without "
+         "excluding the test rows; a panel was assembled over the whole history and handed on. "
+         "Every check then runs, every number is computed correctly, and all of them are about "
+         "a panel that was not allowed to exist -- which is worse than an obvious error, "
+         "because nothing looks wrong. Masking the rows is not enough either: a full-sample "
+         "scaling, a quantile cut point or a rolling statistic consumes them anyway.",
+         ("P9",),
+         "Check the rows the panel actually carries against the boundary, before anything "
+         "reads it, and take the sealed rows out rather than merely leaving them unused."),
     Mode("test-set-consumed", "stat", "the sealed period was read and then tuned on",
          "A test result that improves after 'one small fix'.",
          "Once read, that segment is development data. Anything measured on it "

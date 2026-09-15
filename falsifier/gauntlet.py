@@ -16,7 +16,7 @@ from . import econ, mech, pit, robust
 from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
                      p5_external_facts, p6_mechanism_implications,
                      p7_validator_control, p8_hindsight_control)
-from .seal import SealedSplit
+from .seal import SealedSplit, p9_panel_respects_seal
 from .stats import deflated_threshold, forward_returns, ic_summary, rank_ic
 from .verdict import FAIL, INCONCLUSIVE, NA, PASS, Check, Report
 
@@ -222,6 +222,30 @@ def run(study: Study, prereg: Optional[Prereg] = None, seal: Optional[SealedSpli
                       blocking=False,
                       detail="test period still sealed" if st is None
                       else f"unsealed {st['when']} (config {st['config_hash']}, reads={st['reads']})"))
+
+    # ---- was the panel allowed to exist? -----------------------------------
+    # Before anything is measured, and it stops. P2 reports whether the seal is
+    # intact; it never looks at the data, and every peek in this record came in
+    # through that gap -- a diagnostic printed without excluding the test rows,
+    # a panel handed over that quietly included them. A contaminated panel does
+    # not make the numbers below look wrong. It makes them look ordinary.
+    panel = {"signal": study.signal, "ret": study.ret, "mask": study.mask,
+             "naive_baseline": study.naive_baseline, "tradable_ret": study.tradable_ret,
+             "dollar_volume": study.dollar_volume, "triggers": study.triggers,
+             "positive_control": study.positive_control}
+    panel.update({f"covariate:{k}": v for k, v in study.covariates.items()})
+    panel.update({f"control:{n}": c for n, c in
+                  zip(study.control_names or [f"c{i}" for i in range(len(study.controls))],
+                      study.controls)})
+    p9 = p9_panel_respects_seal(seal, study.dates, panel, horizon=study.horizon,
+                                unsealed=bool(seal is not None and seal.status()))
+    rep.add(p9)
+    if p9.outcome == FAIL:
+        rep.notes.append("stopped at the seal: the panel includes rows it was not allowed to "
+                         "see, so nothing measured on it is out of sample. Every check below "
+                         "would have run and every one of them would have been about a panel "
+                         "that should not exist.")
+        return rep
 
     # ---- are the inputs alive? ---------------------------------------------
     # Before anything is measured. A frozen input makes every number below it

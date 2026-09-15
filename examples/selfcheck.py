@@ -36,6 +36,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  panel_saw_the_test     rows it was not allowed to see   -> REJECTED by P9
   bought_the_locked_board  a real edge you could not enter-> REJECTED by E6
   oracle_proposed_it     the idea source knew the future  -> REJECTED by P8
   guard_cannot_fire      a gate that could never go red   -> REJECTED by P7
@@ -486,6 +487,36 @@ def identification_targets():
     ]
 
 
+def seal_targets():
+    """A target for P9 -- the panel included rows it was not allowed to see.
+
+    Every peek in this record arrived this way, and none of them was an unseal:
+    a yearly alignment diagnostic printed without excluding the test rows, and a
+    panel handed to this referee that quietly contained them. In the second case
+    every check ran and every number was computed correctly; all of them were
+    about a panel that should not have existed.
+
+    So the study underneath is the honest survivor again. Nothing is wrong with
+    the signal. The only thing wrong is which rows it was allowed to be built
+    from, and that is invisible to every other check in the battery -- P2 reports
+    whether the seal is intact and never looks at the data.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+    dates = np.arange(T_)
+    split = F.SealedSplit(train_end=int(T_ * 0.6), valid_end=int(T_ * 0.8),
+                          ledger=str(Path(tempfile.mkdtemp()) / "unseal_ledger.json"))
+
+    return [
+        ("panel_saw_the_test", "REJECTED", "P9", F.Study(
+            claim="Momentum forecasts returns (on a panel that runs through the sealed period)",
+            signal=honest, ret=ret, mask=mask, dates=dates, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel})),
+    ], split
+
+
 def constraint_targets():
     """A target for E6 -- the book bought what was locked.
 
@@ -872,7 +903,8 @@ def pipeline_targets():
 def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
             + stationarity_targets() + identification_targets() + guard_targets()
-            + hindsight_targets() + constraint_targets() + artefact_targets()
+            + hindsight_targets() + constraint_targets() + seal_targets()[0]
+            + artefact_targets()
             + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
@@ -945,6 +977,21 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    _seal_specs, _seal_split = seal_targets()
+    for name, want_outcome, want_killer, study in _seal_specs:
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, seal=_seal_split, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
         print(rep.render())
         reports.append(rep)
         killers = [c.id for c in rep.killers]

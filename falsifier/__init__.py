@@ -30,7 +30,7 @@ from .priors import (Index, Prior, checklist, load as load_priors,
                      render as render_priors, search as search_priors,
                      validate as validate_priors)
 from .taxonomy import MODES, BY_ID, Mode, by_family, coverage, uncovered
-from .seal import SealedSplit, SealError
+from .seal import SealedSplit, SealError, p9_panel_respects_seal
 from .strategy import (StrategyStudy, backtest, free_selection_null,
                        matched_selection_null, perf, run_strategy)
 from .stats import (deflated_threshold, forward_returns, ic_summary,
@@ -52,7 +52,7 @@ __all__ = [
     "Increment", "excess", "render_yearly", "i1_incremental_contribution",
     "i2_increment_null", "plot_increment", "run_increment",
     "Study", "run", "StrategyStudy", "run_strategy", "backtest", "perf",
-    "matched_selection_null", "free_selection_null", "Prereg", "SealedSplit", "SealError", "Check", "Report",
+    "matched_selection_null", "free_selection_null", "Prereg", "SealedSplit", "p9_panel_respects_seal", "SealError", "Check", "Report",
     "audit", "a0_truncation", "a1_label_shuffle_refit", "a2_feature_shift", "a3_label_delay",
     "cs_shuffle", "matched_permutation", "identity_permutation", "orthogonalize",
     "random_selection", "null_distribution", "percentile_of", "empirical_p",

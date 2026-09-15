@@ -39,8 +39,16 @@ person proposing it already did, and it is why the claim needs a referee.
    something else.
 4. **Ask how many variants were tried**, including the ones abandoned early,
    and pass the honest count as `n_candidates_searched`.
-5. **Do not touch the test period.** Development happens on train and valid.
-   Unsealing is a one-way door and requires a frozen specification.
+5. **Do not touch the test period** — and check that the panel agrees.
+   Unsealing is a one-way door and requires a frozen specification, but no peek
+   in this record came from unsealing. They came from a diagnostic printed
+   without excluding the test rows, and from a panel assembled over the whole
+   history and handed on. Pass `dates` and the `SealedSplit`: `P9` reads the
+   rows the panel actually carries, and **stops the run**, because a
+   contaminated panel does not make the numbers below look wrong — it makes
+   them look ordinary. Outside a study, `seal.assert_clean(dates, **arrays)` is
+   one line, and `seal.redact(arr, dates)` takes the rows out rather than
+   leaving them masked (a full-sample scaling consumes a masked row anyway).
 8. **Report the killer, not just the verdict.** "REJECTED by M1 — a null that
    knows only size and turnover reproduces 94% of the effect" is the finding.
    "REJECTED" alone is not.
