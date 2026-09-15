@@ -15,25 +15,32 @@ four axes and tells you which one killed the claim.
 It never certifies anything. The best available outcome is **SURVIVES**, which
 means *not yet falsified* and is not a synonym for true.
 
-> ### Scope: the defaults are A-share defaults
+> ### Built out of A-share findings
 >
-> The engine is market-agnostic; the numbers it ships with are not. Three of
-> them were measured on Chinese equities and are wrong elsewhere:
+> Not a textbook list. **Every failure mode in the taxonomy and every threshold
+> in the battery was extracted from the post-mortem of a study that had been
+> built, believed for a while, and then killed** — a record of 140 verdicts over
+> 75 projects, 127 of them on Chinese equities and most of the rest on Chinese
+> commodity futures.
+>
+> That is the provenance and the boundary in one sentence. The engine carries no
+> market assumption, but three of the numbers it ships with are A-share findings
+> and have to be replaced elsewhere:
 >
 > - **`S6`'s positive control** is short-horizon reversal, which clears at
->   t = +8.71 on an A-share panel. That is a fact about A-shares, not about
->   markets. Somewhere else you must supply a `positive_control` you believe
->   holds there — **and if you do not, the referee will correctly call
->   everything INCONCLUSIVE**, which is the check working, not failing.
-> - **`E6`'s `price_limit`** defaults to ±9.95%, the A-share daily limit. A
->   market without limits needs `price_limit=None`, and then E6 says so rather
->   than pretending the book was enterable.
-> - **`M5`'s bad-print threshold** sits at 0.2%, between what clean A-share
+>   t = +8.71 on an A-share panel. That is a finding about A-shares, not about
+>   markets. Somewhere else, supply a `positive_control` you believe holds there
+>   — **and if you do not, the referee will correctly call everything
+>   INCONCLUSIVE**, which is the check working, not failing.
+> - **`E6`'s `price_limit`** is ±9.95%, the A-share daily band. A market without
+>   limits needs `price_limit=None`, and E6 then says it cannot price the
+>   constraint rather than pretending the book was enterable.
+> - **`M5`'s bad-print threshold** is 0.2%, measured between what clean A-share
 >   one-minute index data does (0.049%) and what one synthetic series did (~1%).
 >
-> Everything else — the nulls, the point-in-time audits, the cost gate, the
-> increment layer — carries no market assumption. **Ported without replacing
-> those three, this is an A-share tool.**
+> The nulls, the point-in-time audits, the cost gate and the increment layer
+> carry no market assumption — but they are defended against the ways *these*
+> markets have gone wrong, because that is where the evidence came from.
 
 ```
 ================================================================================
