@@ -12,8 +12,26 @@ with a plausible story and a backtest attached.
 forecast, and what you already knew. It runs a fixed battery of attacks along
 four axes and tells you which one killed the claim.
 
-It never certifies anything. The best available outcome is **SURVIVES**, which
-means *not yet falsified* and is not a synonym for true.
+It never certifies anything. There are three outcomes and the third one carries
+most of the design:
+
+| | |
+|---|---|
+| **SURVIVES** | *not yet falsified*. Not a synonym for true, and never reported as one |
+| **REJECTED** | an attack landed, and the report names which |
+| **INCONCLUSIVE** | the claim was **not judged** — which is not survival |
+
+The third is the one people leave out, and leaving it out is how a battery that
+returned nothing gets read as a battery that found nothing. A check that could
+not run says so: `A0` reports *"the decisive audit did not run"* rather than
+quietly passing. When `S6` shows the panel cannot detect an effect it is known
+to contain, the whole run stops — because a null result from an apparatus with
+no demonstrated power is not evidence of absence, in either direction. And when
+`A4` shows the leak detector has no step left to see, `A2`'s verdict is
+downgraded rather than read as a suspicion.
+
+**A battery that goes green because you gave it nothing to work with is worse
+than no battery at all.**
 
 > ### Built out of A-share findings
 >
