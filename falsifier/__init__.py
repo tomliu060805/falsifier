@@ -16,7 +16,7 @@ from .mech import (m0_harness, m1_matched_null, m2_identity_null,
 from .nulls import (cs_shuffle, empirical_p, identity_permutation,
                     matched_permutation, null_distribution, orthogonalize,
                     percentile_of, random_selection)
-from .pit import a0_truncation, a1_label_shuffle_refit, a2_feature_shift, a3_label_delay, audit
+from .pit import a0_truncation, a1_label_shuffle_refit, a2_feature_shift, a3_label_delay, a4_shift_power, audit
 from .pipeline import RollingFit
 from .prereg import (Prereg, p3_frozen_config, p4_fill_convention,
                      p5_external_facts, p7_validator_control, p8_hindsight_control, p6_mechanism_implications)
@@ -56,7 +56,7 @@ __all__ = [
     "i2_increment_null", "plot_increment", "run_increment",
     "Study", "run", "StrategyStudy", "run_strategy", "backtest", "perf",
     "matched_selection_null", "free_selection_null", "Prereg", "SealedSplit", "p9_panel_respects_seal", "SealError", "Check", "Report",
-    "audit", "a0_truncation", "a1_label_shuffle_refit", "a2_feature_shift", "a3_label_delay",
+    "audit", "a0_truncation", "a1_label_shuffle_refit", "a2_feature_shift", "a3_label_delay", "a4_shift_power",
     "cs_shuffle", "matched_permutation", "identity_permutation", "orthogonalize",
     "random_selection", "null_distribution", "percentile_of", "empirical_p",
     "m0_harness", "m1_matched_null", "m2_identity_null", "m3_orthogonalize", "m4_beats_naive", "orient",

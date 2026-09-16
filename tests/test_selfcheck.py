@@ -108,7 +108,7 @@ def test_taxonomy_is_consistent():
     from falsifier import taxonomy as T
     assert len({m.id for m in T.MODES}) == len(T.MODES), "duplicate mode id"
     known = {"P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9",
-             "A0", "A1", "A2", "A3",
+             "A0", "A1", "A2", "A3", "A4",
              "S4", "S5", "S6", "S7", "S8", "S9", "S10",
              "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14",
              "E1", "E2", "E3", "E4", "E5", "E6", "I1", "I2",
@@ -139,6 +139,11 @@ def test_taxonomy_is_consistent():
     # death. Each needs a reason, so that adding to this set is a decision
     # rather than a way to make the test go quiet.
     corroborating = {
+        "A4": "its blocking verdict is INCONCLUSIVE, never FAIL -- it says the detector "
+              "cannot decide, not that the claim is false -- so it can never appear in "
+              "`killers`, which collects blocking failures only. The target "
+              "`smoothed_past_detection` exercises it and asserts the run comes out "
+              "INCONCLUSIVE rather than REJECTED, which is the whole point of it",
         "M3": "fires as a secondary killer on size_proxy; M1 is the primary there",
         "SE1": "portfolio-vs-benchmark, exercised by a replayed real study rather "
                "than by a synthetic target",
@@ -330,10 +335,24 @@ def test_e3_separates_bounce_from_a_real_edge(panel):
                                 tradable_ret=ret, price_source="index").outcome != "FAIL"
 
 
-def test_e3_is_off_unless_the_source_is_declared(panel):
+def test_e3_reports_the_profile_but_does_not_veto_undeclared(panel):
+    """Undeclared means no veto, not no measurement.
+
+    E3 used to return NA whenever the price source was left at its default,
+    which threw away the delay profile along with the verdict -- and how much of
+    an edge survives one step of delay is most of the question on a weekly book.
+    It now measures and says what it cannot settle: a fast decay on an
+    undeclared series is either a stale print or a genuinely short-lived edge,
+    and only the second is compatible with the series being tradable.
+    """
     ret, mask, _, _ = panel
-    c = F.e3_execution_delay(ret, ret, mask, horizon=1)
-    assert c.outcome == "NA" and "price_source" in c.detail
+    at_one = F.e3_execution_delay(ret, ret, mask, horizon=1)
+    assert at_one.outcome == "INCONCLUSIVE" and not at_one.blocking
+    assert "tradable_ret" in at_one.detail
+
+    longer = F.e3_execution_delay(ret, ret, mask, horizon=5)
+    assert not longer.blocking, "an undeclared source must not carry a veto"
+    assert longer.evidence.get("undecidable_without_tradable_ret") is True
 
 
 def test_s8_sees_the_overfitting_signature():

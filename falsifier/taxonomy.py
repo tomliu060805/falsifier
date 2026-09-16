@@ -75,6 +75,20 @@ MODES: Tuple[Mode, ...] = (
          ("M0", "M1", "SM1"), "Run one. It is usually the cheapest check available."),
 
     # ---- point-in-time -----------------------------------------------------
+    Mode("shift-audit-blind-on-smoothed-signals", "pit",
+         "the leak detector cannot see a step this small",
+         "An INCONCLUSIVE from the feature-shift audit, read as a suspicion of look-ahead.",
+         "It is a statement about the instrument. The shift audit locates a leak by sliding the "
+         "feature across the label and finding where the score first steps up; when the signal "
+         "is an average over a span of L, one step of slide changes about 1/L of it, so the step "
+         "shrinks as 1/L while the sampling error of the IC series does not shrink at all. Past "
+         "some amount of smoothing there is no step left to find and the audit returns "
+         "INCONCLUSIVE whatever is true -- and a clean result then gets treated as a leak, which "
+         "is the expensive direction of the mistake.",
+         ("A4",),
+         "Size the step against the panel's own noise floor before reading the verdict, and "
+         "settle it with A0/A1 instead -- rebuilding and refitting do not slide, so smoothing "
+         "does not touch them."),
     Mode("leak-alignment-offset", "pit", "signal and label off by one step",
          "Implausibly high R-squared or IC, often above 0.5.",
          "The label is the same period as the feature, usually from an unsorted "
@@ -372,6 +386,30 @@ MODES: Tuple[Mode, ...] = (
          ("M8", "E1"),
          "Price the rule, never the IC, and check whether the effect is graded before "
          "consuming it with a threshold."),
+    Mode("breadth-too-narrow-for-the-ic", "cost",
+         "the same IC does not survive a narrow universe",
+         "A signal with a healthy, stable IC is carried into a small universe -- an index of "
+         "fifty names, a sector, a themed basket -- on the reasoning that the IC is positive there too.",
+         "Information ratio scales as IC times the square root of the number of independent bets. "
+         "Holding five names out of fifty, idiosyncratic variance swamps the edge a 0.05 IC buys, "
+         "and the same construction that earns in a thousand-name universe loses double digits in a "
+         "fifty-name one. The IC being positive in the narrow universe is not the question; whether "
+         "it is large enough for that few positions is.",
+         ("E1",),
+         "Before porting a signal to a narrower universe, solve IR = IC x sqrt(N_holdings) for the IC "
+         "the new holding count would require, and compare it against the IC you actually have."),
+    Mode("rule-degenerates-to-the-benchmark", "stat",
+         "the rule that passed had stopped being a rule",
+         "One cell of a threshold sweep clears every criterion -- positive in both segments, beating "
+         "its matched null -- while its neighbours do not.",
+         "At that threshold the rule is in the market almost all the time and trades a handful of "
+         "times over the whole sample. It has degenerated into buy-and-hold, so the excess it reports "
+         "is the benchmark's own return arriving under another name. A sweep that does not exclude "
+         "degenerate cells will eventually hand one back as its best result.",
+         (),
+         "Record exposure share and trade count for every cell, and drop any cell above ~95% exposure "
+         "or with a single-digit trade count before ranking; then compare the pass count against the "
+         "number the criteria would pass by chance."),
     Mode("validated-on-substitute-data", "mech", "it worked on the stand-in source",
          "A construction validated on sample, vendor or reconstructed data.",
          "On the source that will actually be traded from, the values are degenerate -- "

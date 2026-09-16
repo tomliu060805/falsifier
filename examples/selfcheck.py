@@ -36,6 +36,7 @@ since A0 needs a pipeline to rebuild and A1 needs one to refit:
   stale_cache            an input three weeks behind       -> REJECTED by M6
   sticky_label           a label that never reorders       -> REJECTED by S9
 
+  smoothed_past_detection  the shift audit has no step left-> INCONCLUSIVE (not REJECTED)
   universe_predates_index  an index that did not exist yet-> REJECTED by M14
   panel_saw_the_test     rows it was not allowed to see   -> REJECTED by P9
   bought_the_locked_board  a real edge you could not enter-> REJECTED by E6
@@ -485,6 +486,48 @@ def identification_targets():
             signal=honest, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
             covariates={"size": size_panel},
             controls=[leaky_ctrl], control_names=["overlapping_window"])),
+    ]
+
+
+def smoothing_targets():
+    """A target for A4 -- the leak detector has nothing left to see.
+
+    The signal is honest. It is a trailing window, causally built, and then put
+    through a long EMA, which is what anyone does to a weekly score whose
+    turnover is unaffordable. That smoothing does two things at once: it takes
+    the per-week churn out of the book, and it takes the step out of A2.
+
+    A2 locates a leak by sliding the feature across the label and finding where
+    the score first steps up. Smoothed over a span of L, one step of slide moves
+    about 1/L of the signal, so the step shrinks as 1/L while the sampling error
+    of the IC series does not shrink at all. Past some amount of smoothing there
+    is no step left to find, and A2 returns INCONCLUSIVE whatever is true.
+
+    **The expensive direction of that mistake is reading it as a suspicion.** A
+    clean signal then gets treated as a probable leak, and the way out is not a
+    cleverer statistic on the same array -- it is A0 and A1, which rebuild and
+    refit rather than slide, and which smoothing therefore does not touch.
+
+    Expected INCONCLUSIVE, not REJECTED, and the word is the point: nothing here
+    says the signal is wrong.
+    """
+    ret, mask, z_size, a = build_panel()
+    T_, N_ = ret.shape
+    size_panel = np.repeat(z_size[None, :], T_, axis=0)
+    honest = trailing_mean(ret, WINDOW, end_offset=0)
+
+    span, alpha = 120, 2.0 / (120 + 1)
+    smoothed = np.array(honest, float)
+    for t in range(1, T_):
+        prev = np.where(np.isfinite(smoothed[t - 1]), smoothed[t - 1], 0.0)
+        cur = np.where(np.isfinite(honest[t]), honest[t], prev)
+        smoothed[t] = alpha * cur + (1 - alpha) * prev
+
+    return [
+        ("smoothed_past_detection", "INCONCLUSIVE", None, F.Study(
+            claim="An honest trailing window, smoothed until the shift audit goes blind",
+            signal=smoothed, ret=ret, mask=mask, horizon=5, cost_bp=1.0,
+            covariates={"size": size_panel})),
     ]
 
 
@@ -939,7 +982,7 @@ def all_target_specs():
     return (make_targets() + declaration_targets() + integrity_targets()
             + stationarity_targets() + identification_targets() + guard_targets()
             + hindsight_targets() + constraint_targets() + seal_targets()[0]
-            + data_targets() + artefact_targets()
+            + data_targets() + smoothing_targets() + artefact_targets()
             + robustness_targets() + pipeline_targets() + strategy_targets())
 
 
@@ -1009,6 +1052,20 @@ def main(n_draws: int = 120, include_pipeline: bool = True) -> int:
             failures.append(name)
 
     for name, want_outcome, want_killer, study in integrity_targets():
+        print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
+              + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
+        rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)
+        print(rep.render())
+        reports.append(rep)
+        killers = [c.id for c in rep.killers]
+        ok_o = rep.outcome == want_outcome
+        ok_k = want_killer is None or (killers and killers[0] == want_killer)
+        rows.append((name, want_outcome, rep.outcome, want_killer or "-",
+                     ",".join(killers) or "-", ok_o and ok_k))
+        if not (ok_o and ok_k):
+            failures.append(name)
+
+    for name, want_outcome, want_killer, study in smoothing_targets():
         print(f"\n{'#' * 96}\n### target: {name}   (expected {want_outcome}"
               + (f" by {want_killer}" if want_killer else "") + ")\n" + "#" * 96)
         rep = F.run(study, n_draws=max(40, n_draws // 2), seed=SEED, verbose=True)

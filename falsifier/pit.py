@@ -281,7 +281,16 @@ def audit(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray, horizon: int,
     else:
         out.append(Check("A1", "statistical", "label-shuffle refit", NA, blocking=False,
                          detail="no refit supplied; frozen signal cannot be tested for in-sample fitting"))
+    a4 = a4_shift_power(signal, ret, mask, horizon=horizon, fwd=fwd, min_n=min_n)
     a2 = a2_feature_shift(signal, fwd, mask, window_based=window_based, min_n=min_n)
+    if a4.outcome == INCONCLUSIVE and a4.blocking:
+        # A2's number is not about the signal, so do not let it read as though it
+        # were -- in either direction. A4 carries the veto and the explanation.
+        a2 = replace(a2, outcome=INCONCLUSIVE, blocking=False,
+                     detail=a2.detail + "  -- but see A4: the step this check needs is below "
+                                        "the panel's sampling error, so this verdict is about "
+                                        "the detector, not the signal")
+    out.append(a4)
     a3 = a3_label_delay(signal, ret, mask, horizon, min_n=min_n)
 
     # A2 exists as a stand-in for A0: it infers from a signal's behaviour what A0
@@ -300,3 +309,117 @@ def audit(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray, horizon: int,
     out.append(a2)
     out.append(a3)
     return out
+
+def a4_shift_power(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
+                   horizon: int = 1, fwd: Optional[np.ndarray] = None,
+                   min_n: int = 30, weak: float = 3.0, span: int = 4) -> Check:
+    """A4 -- is the step A2 needs to see bigger than this panel's noise?
+
+    A2 finds a leak by sliding the feature across the label and locating where
+    the score first steps up. The premise holds for a raw trailing window, where
+    one step of slide swallows one whole label day. It fails for a smoothed
+    signal, and fails quietly: when the score is an average over a span of L,
+    sliding one step changes only about 1/L of it, so the step shrinks roughly
+    as 1/L while the sampling error of the IC series does not shrink at all.
+    Below some amount of smoothing the step disappears into the noise, A2
+    returns INCONCLUSIVE, and **that reads as a suspicion of look-ahead when it
+    is a statement about the instrument.**
+
+    So measure the instrument. The quantity is the one the failure is about:
+
+        step  = |IC| at shift +1  minus  |IC| at shift 0
+        floor = A2's own detection floor, 5 * sqrt(2) * SE of the IC series
+
+    and the ratio between them is how much power A2 has on *this* signal. On a
+    five-day window it is about 10; the same signal put through a ten-day EMA
+    gives about 3, and a forty-day EMA about 1.5. Past that the detector is
+    blind and says INCONCLUSIVE regardless of what is true.
+
+    Same shape as S6 and P7, one axis over. S6 asks whether the panel can detect
+    an effect it is known to contain; P7 whether a guard can be made to fail;
+    this asks whether the leak detector can see a step at all. All three exist
+    because a null result from an apparatus with no demonstrated power is not
+    evidence of absence -- and this one because it is routinely read as the
+    opposite.
+
+    When it comes back weak the answer is not a different statistic on the same
+    array. It is `A0` and `A1`: rebuilding from truncated history and refitting
+    on destroyed labels are unaffected by smoothing, and they settle it. That
+    costs wiring the pipeline in, and the cost is the point -- without it the
+    decisive audits read NA forever.
+    """
+    fwd = forward_returns(ret, horizon) if fwd is None else fwd
+    m = np.asarray(mask, bool)
+    sig = np.asarray(signal, float)
+
+    def _abs_ic(x):
+        v = rank_ic(x, fwd, m, min_n=min_n)
+        v = v[np.isfinite(v)]
+        if v.size < 4:
+            return np.nan, np.nan
+        return float(abs(v.mean())), float(v.std(ddof=1) / np.sqrt(v.size))
+
+    # Across the same shifts A2 scans, not at one chosen position. A first
+    # version measured the step at 0 -> +1 only, which is where the boundary of
+    # an *honest* signal sits -- so on a leaked signal, whose step is somewhere
+    # else, it measured a place with no step and declared A2 blind. It then
+    # downgraded an A2 that was successfully rejecting. The power of a detector
+    # is not a property of one location, and this must never be able to say "no
+    # power" about a signal on which A2 found a boundary.
+    def _shift(x, k):
+        o = np.full_like(x, np.nan)
+        if k > 0:
+            o[:-k] = x[k:]
+        elif k < 0:
+            o[-k:] = x[:k]
+        else:
+            o = np.array(x, float)
+        return o
+
+    scores, se = {}, np.nan
+    for k in range(-span, 2):
+        v, s_ = _abs_ic(_shift(sig, k))
+        scores[k] = v
+        if k == 0:
+            se = s_
+    vals = np.array([scores[k] for k in sorted(scores)], float)
+    if not (np.isfinite(vals).all() and np.isfinite(se) and se > 0):
+        return Check("A4", "statistical", "shift-detector power", INCONCLUSIVE, blocking=False,
+                     detail="too few usable cross-sections to size A2's steps against its noise")
+
+    floor = 5.0 * np.sqrt(2.0) * se
+    incs = np.diff(vals)
+    step = float(incs.max()) if incs.size else 0.0
+    where = int(sorted(scores)[int(np.argmax(incs))]) if incs.size else 0
+    ratio = step / floor if floor > 0 else np.inf
+    ev = {"profile": {str(k): scores[k] for k in sorted(scores)}, "largest_step": step,
+          "largest_step_at": f"{where}->{where + 1}", "floor": floor, "ratio": ratio}
+    body = (f"the largest one-step rise anywhere in the shift profile is {step:+.4f} "
+            f"(at {where}->{where + 1}) against a detection floor of {floor:.4f} -- {ratio:.2f}x")
+
+    if ratio >= weak:
+        return Check("A4", "statistical", "shift-detector power", PASS,
+                     statistic=ratio, threshold=weak, evidence=ev,
+                     detail=f"{body}. A2 has room to see a misalignment on this signal, so its "
+                            f"verdict can be read as being about the signal")
+    if ratio >= 1.0:
+        return Check("A4", "statistical", "shift-detector power", FAIL, blocking=False,
+                     statistic=ratio, threshold=weak, evidence=ev,
+                     detail=(f"{body}, which is thin. A2 will catch a wholesale one-step error "
+                             f"here and may well miss a partial one -- a composite with a single "
+                             f"early input, or a shift inside a smoothed component. Treat its "
+                             f"verdict as covering the coarse case; `recompute_at` and `refit` "
+                             f"settle the rest, and are unaffected by smoothing"))
+    # Inconclusive rather than failed, and the word matters: nothing here says the
+    # signal is wrong. It says the instrument cannot tell, which is the claim not
+    # having been judged on this axis -- and blocking, because if A0 and A1 were
+    # not wired either, then nothing has looked at the leak question at all.
+    return Check("A4", "statistical", "shift-detector power", INCONCLUSIVE,
+                 statistic=ratio, threshold=weak, evidence=ev,
+                 detail=(f"{body}, below the floor. **A2 cannot decide anything about this "
+                         f"signal**, and an INCONCLUSIVE from it here is a fact about A2, not a "
+                         f"suspicion about the signal -- reading it the other way is how a clean "
+                         f"result gets treated as a leak. This is what smoothing does: the step "
+                         f"shrinks as 1/span while the sampling error does not. Wire "
+                         f"`recompute_at` and `refit` -- A0 and A1 rebuild and refit rather than "
+                         f"slide, so smoothing does not touch them"))

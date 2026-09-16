@@ -162,11 +162,13 @@ def e3_execution_delay(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
     At a one-step horizon with no tradable series the two are not separable from
     this panel alone, and the check says so rather than guessing.
     """
-    if price_source == "tradable" and tradable_ret is None:
-        return Check("E3", "economic", "execution delay / price artefact", NA, blocking=False,
-                     detail="returns declared as coming from a tradable instrument. If they come "
-                            "from an index or a constructed series, set price_source='index' -- "
-                            "stale prints are the most common source of a fake intraday edge")
+    # Without a tradable series the two explanations for a fast decay -- a stale
+    # print and a genuinely short-lived edge -- cannot be separated. That used to
+    # make this NA, which threw away the decay profile itself: how much of the
+    # edge survives a one-step delay is worth knowing either way, and on a weekly
+    # book it is most of the question. So the profile runs and the check says
+    # what it cannot settle, rather than not running.
+    _undecidable = (price_source == "tradable" and tradable_ret is None)
 
     def ann_of(sig, rr):
         pf = quantile_portfolio(sig, rr, mask, q=q, hold=max(1, horizon),
@@ -193,6 +195,7 @@ def e3_execution_delay(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
 
     if not np.isfinite(base) or abs(base) < 1e-9:
         return Check("E3", "economic", "execution delay / price artefact", INCONCLUSIVE,
+                     blocking=False,
                      detail="no edge at zero delay, nothing to decay", evidence=ev)
 
     if tradable_ret is not None:
@@ -224,15 +227,26 @@ def e3_execution_delay(signal: np.ndarray, ret: np.ndarray, mask: np.ndarray,
     ok = keep1 >= floor
     ev |= {"retained_at_delay_1": keep1, "overlap_floor": floor}
     trace = ", ".join(f"d{d}:{v:+.2%}" for d, v in prof.items() if np.isfinite(v))
+    # Advisory when the price source was not declared. The profile itself is
+    # worth having -- it used to be thrown away entirely, and on a weekly book
+    # how much survives one step of delay is most of the question -- but a veto
+    # is not justified: a fast decay on an undeclared series is either a stale
+    # print or a genuinely short-lived edge, and if the series really is
+    # tradable the second one is not a defect.
     return Check("E3", "economic", "execution delay / price artefact", PASS if ok else FAIL,
+                 blocking=not _undecidable,
                  statistic=keep1, threshold=floor,
                  detail=(f"the edge decays gracefully with entry delay [{trace}]"
                          if ok else
                          f"one step of delay removes {1 - keep1:.0%} of the edge, far past the "
                          f"{1 - floor:.0%} the window overlap alone allows [{trace}] -- the edge "
                          "lives in the first print after the signal, which is what a stale "
-                         "quote or a spread bouncing back looks like"),
-                 evidence=ev)
+                         "quote or a spread bouncing back looks like")
+                 + ("  Without `tradable_ret` this cannot separate a stale print "
+                    "from a genuinely short-lived edge; it says only that the edge "
+                    "is in the first print, which either way is where a book "
+                    "cannot reach it." if _undecidable else ""),
+                 evidence=ev | {"undecidable_without_tradable_ret": _undecidable})
 
 
 COST_COMPONENTS = ("commission", "spread", "impact", "tax", "borrow")

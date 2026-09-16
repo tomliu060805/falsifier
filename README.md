@@ -76,6 +76,7 @@ note: stopped after the point-in-time audits: a leak makes every downstream
 | | `A1` label-shuffle refit | something fitted on the full sample | `refit` |
 | | `A2` feature time-shift | an off-by-one between signal and label | — |
 | | `A3` label delay decay | an alignment error, or a one-step effect sold as many | — |
+| | `A4` shift-detector power | an INCONCLUSIVE from A2 that is about A2, not the signal -- the step shrinks as 1/span under smoothing while the noise does not | — |
 | | `S4` significance after search | a t-stat that ignores how many candidates you tried | candidate count |
 | | `S5` seed stability | a configuration that worked once | `seed_metric` |
 | | `S6` positive control | a null result from an apparatus with no power | — |
