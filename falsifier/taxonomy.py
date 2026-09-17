@@ -233,6 +233,16 @@ MODES: Tuple[Mode, ...] = (
          "A new signal with an independent-sounding story.",
          "Correlation with something already in the book is above 0.9.",
          ("M3", "M4"), "Correlate against everything already in production first."),
+    Mode("baseline-sees-fewer-inputs", "mech",
+         "the baseline was given less information than the model",
+         "A learned representation beats the textbook baseline on the same panel.",
+         "The baseline is the one from the literature, built on one series; the model "
+         "eats a wider input. The measured 'increment' then mixes two things -- what the "
+         "representation extracted, and what the baseline was simply never shown. "
+         "complexity-no-increment does not cover this: its premise is *the same inputs*.",
+         ("M4", "M3"),
+         "List the model's input columns, then build the baseline on all of them before "
+         "measuring anything. Report the increment before and after."),
     Mode("complexity-no-increment", "mech", "the machinery is not paying for itself",
          "An elaborate model beats a weak baseline.",
          "A naive construction on the same inputs does as well; the gain is in the "
@@ -511,6 +521,22 @@ MODES: Tuple[Mode, ...] = (
          (),
          "For every column in the row, write down the rule that chose it, and require them "
          "to be the same rule."),
+    Mode("assumption-measurable-and-wrong", "proc",
+         "an assumption that could have been measured instead",
+         "A method built around a stated limitation of the data -- an interval rather than a "
+         "point, a simulator rule, a conservative bound -- taken over from the paper that "
+         "introduced it.",
+         "The limitation is a fact about *that* market's data, and it travelled here with the "
+         "method rather than being re-checked. One paper's entire premise was that aggregated "
+         "depth loses which resting order was cancelled, so passive fill rates can only be "
+         "bounded; on this market the cancelling order names itself in both exchanges' feeds "
+         "and the bound collapses to a measurement. The cost runs both ways: an assumption "
+         "that is falsely restrictive throws away precision you have, and one that is falsely "
+         "permissive is a leak.",
+         ("P5",),
+         "Before adopting a method's stated limitation, check whether it binds on your data. "
+         "Queue discipline, tick size, settlement timing, borrow availability and publication "
+         "lag are all routinely assumed and all directly observable."),
     Mode("internal-consistency-not-enough", "proc", "value-by-value agreement proves little",
          "A reimplementation that matches the original to machine precision.",
          "It proves the two agree, not that either is right. A shared conceptual "
