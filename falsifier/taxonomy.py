@@ -207,6 +207,42 @@ MODES: Tuple[Mode, ...] = (
          "Once read, that segment is development data. Anything measured on it "
          "afterwards is in-sample.",
          ("P2",), "Log the unseal and refuse to re-tune; carry forward instead."),
+    Mode("metric-depends-on-the-base-rate", "stat",
+         "a threshold carried over from a market where the event was rarer",
+         "A decision rule with a threshold, an F-score or a precision target taken from the "
+         "paper that introduced it.",
+         "Those numbers are not properties of the classifier, they are properties of the "
+         "classifier *at that prevalence*. A probe on one A-share name put the ten-second fill "
+         "rate at 0.43 where the paper had 0.04 -- an order of magnitude -- so every threshold "
+         "calibrated against the rarer event is meaningless here, and the imported F-score "
+         "target is unreachable and unmeaningful at once. The tell is that the rule was tuned "
+         "somewhere with a different event frequency and moved without re-tuning.",
+         ("P5",),
+         "Measure the base rate on your own data before importing any threshold, and re-derive "
+         "the operating point rather than the number."),
+    Mode("decision-space-degenerate", "mech",
+         "the thing the strategy chooses has nothing to choose between",
+         "A well-specified rule about where to post, which venue to use, or which tier to take.",
+         "In this market the control variable is pinned. Measured on Shenzhen snapshots, the "
+         "spread is exactly one tick 99.3% of the time on a 11.8-yuan name and still 88.8% at "
+         "45 yuan; it takes a price above 100 to open up. A rule that optimises the posting "
+         "distance is then optimising over a single available value, and whatever it reports is "
+         "the value of that one choice rather than of the optimisation.",
+         (),
+         "Before building the optimiser, plot the distribution of the variable it is supposed to "
+         "choose. If it is a point mass, the strategy has no decision to make here."),
+    Mode("negative-without-a-reproduced-baseline", "proc",
+         "a rejection nobody can attribute",
+         "A careful replication that fails, reported as the effect not holding in this market.",
+         "The original result was never reproduced on its own data, so the failure has at least "
+         "two explanations -- the market differs, or this implementation does -- and nothing in "
+         "the study separates them. That is not a weaker version of a rejection; it is a "
+         "different claim, and the cheap fix is to run the original leg first on a market where "
+         "the answer is known, which is why free US tick data is worth the download before "
+         "touching anything proprietary.",
+         ("S6",),
+         "Reproduce the paper's own number on the paper's own market first. Until that leg "
+         "exists, a negative result is unattributable."),
     Mode("relative-metric-without-absolute", "stat", "a ratio improves while the level is bad",
          "Certainty-equivalent gain, utility improvement, or an information ratio.",
          "The absolute return can still sit below the risk-free rate.",
@@ -241,8 +277,14 @@ MODES: Tuple[Mode, ...] = (
          "representation extracted, and what the baseline was simply never shown. "
          "complexity-no-increment does not cover this: its premise is *the same inputs*.",
          ("M4", "M3"),
-         "List the model's input columns, then build the baseline on all of them before "
-         "measuring anything. Report the increment before and after."),
+         "Two steps, and the second is the one that gets skipped: (1) list the model's "
+         "input columns and build the baseline on all of them; (2) ask again what "
+         "derived quantities those same columns still support -- above all at another "
+         "sampling frequency. Alignment is recursive, not a one-off check: a baseline "
+         "that already used every column was still short a whole frequency's worth. "
+         "And check the baseline's calibration before reading any side-split: a "
+         "systematically high baseline makes anything that corrects downward look "
+         "one-sidedly useful."),
     Mode("complexity-no-increment", "mech", "the machinery is not paying for itself",
          "An elaborate model beats a weak baseline.",
          "A naive construction on the same inputs does as well; the gain is in the "
