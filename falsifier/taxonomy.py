@@ -347,6 +347,17 @@ MODES: Tuple[Mode, ...] = (
          "Too rare, too small against costs, or concentrated where the position "
          "would already be profitable for other reasons.",
          ("E1", "E2"), "Price it as a standalone leg before adding it to anything."),
+    Mode("alt-channel-no-earlier-than-price", "mech",
+         "the richer channel fires no earlier than price",
+         "A data source that plainly carries more than the daily bar -- order flow, "
+         "broker seats, limit-up spillover, minute co-movement, a prior graph -- and an "
+         "argument that it must therefore see the move coming.",
+         "Richer is not earlier. The extra detail resolves the move more finely at the "
+         "moment it happens, while the first usable signal still lands at or after the "
+         "price move. The channel buys measurement quality, not lead time, and lead time "
+         "is usually the load-bearing assumption.",
+         (), "Date the channel's first signal against the price move on the same events, "
+         "in trading days, before any of the pipeline gets built."),
     Mode("threshold-effect-diluted", "mech", "a threshold effect modelled as continuous",
          "A continuous modulation that shows nothing.",
          "The effect lives in a few dozen extreme days; spreading it across every "
