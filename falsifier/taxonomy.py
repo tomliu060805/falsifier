@@ -58,6 +58,20 @@ MODES: Tuple[Mode, ...] = (
          "tradability. Match on every dimension that governed selection, not the one "
          "that is easiest to match.",
          ("M1",), "List what determined entry, then match the null on all of it."),
+    Mode("null-percentile-hides-the-effect-size", "null",
+         "the null reproduces the effect and the percentile still says 100",
+         "The result sits at the 99th or 100th percentile of the matched null, and that "
+         "percentile is reported as the whole answer.",
+         "A percentile is a statement about the null's spread, not about how much of the "
+         "effect the null accounts for. Where the null is tight -- because the matching "
+         "was good -- a candidate that reproduces 95% of the effect still lands at the "
+         "top of it. The extreme case is a signal that IS the covariate it is being "
+         "matched on: bucket on the covariate, rank inside each bucket, and it still "
+         "comes out at the 100th percentile, because every bucket retains a little "
+         "ordering. The percentile can only ever say 'not identical to the null'.",
+         ("M1",),
+         "Report the null's mean effect beside the candidate's and reject when the null "
+         "reproduces most of it -- the working threshold here is 80%."),
     Mode("null-random-structure-wins", "null", "a random structure does as well",
          "A learned graph, basis, regime split or weighting scheme improves the metric.",
          "Substituting a random structure of the same shape often matches or beats it. "
@@ -156,6 +170,23 @@ MODES: Tuple[Mode, ...] = (
          "Two or three of thirty variants clear the threshold.",
          "That is what noise produces at a five percent threshold over thirty tries.",
          ("S4",), "Count every variant you looked at, including abandoned ones."),
+    Mode("conservative-correction-misapplied", "stat",
+         "a correction for a bias that is not there",
+         "A statistic is discounted for overlap, autocorrelation, multiple testing or "
+         "spread, and the number comes out small. Nobody checks it, because the error "
+         "points the safe way.",
+         "Every correction assumes the bias it corrects is present. Applied where it is "
+         "not, it is an error of the same kind as the one it guards against, and a worse "
+         "one to catch: an inflated number gets audited and a deflated one gets accepted "
+         "as caution. Two ways it happens -- the correction is applied twice (an "
+         "already-non-overlapping series divided by the horizon again), or it is applied "
+         "to a series that never had the property (charging a spread on a fill that was "
+         "taken at the touch). A true result then reads as noise and the line closes, "
+         "leaving no trace, because a negative is never re-examined.",
+         (),
+         "Before correcting, measure the property being corrected for -- infer the "
+         "sampling cadence from the series' own non-null spacing rather than assuming "
+         "it, and state what the discount would be if the bias were absent."),
     Mode("overlap-inflated-t", "stat", "overlapping windows treated as independent",
          "A t-statistic in the double digits on a few dozen observations.",
          "Consecutive forward windows share most of their span; the effective sample "
@@ -449,6 +480,23 @@ MODES: Tuple[Mode, ...] = (
          ("M8", "E1"),
          "Price the rule, never the IC, and check whether the effect is graded before "
          "consuming it with a threshold."),
+    Mode("criterion-mismatched-to-the-rule", "proc",
+         "the metric tests a use the signal does not have",
+         "A candidate is killed -- or waved through -- on a rank IC, a hit rate or a "
+         "correlation, without anyone asking which of those the rule actually consumes.",
+         "The right criterion is a property of the rule, not of the signal. A score used "
+         "as a hysteresis state machine -- cross an extreme quantile, hold until the "
+         "opposite one -- lives entirely in the tail, and its rank IC can be weak, unstable "
+         "or sign-flipping between segments while the book is fine: the middle of the "
+         "ranking, which dominates the IC, is never traded. The same score used to set a "
+         "direction from its level is linear in the ranking, and there the IC is exactly "
+         "the right test. So one IC number can be a death sentence for one proposal and "
+         "irrelevant for another built on the identical series, and a study that reports "
+         "the IC without naming the rule has not said which it is.",
+         ("M8", "E1"),
+         "Name the rule before choosing the metric: state which part of the ranking it "
+         "consumes, then test that part. Where a tail-state rule is being defended, price "
+         "the state machine; where a level-to-direction rule is, the IC settles it."),
     Mode("breadth-too-narrow-for-the-ic", "cost",
          "the same IC does not survive a narrow universe",
          "A signal with a healthy, stable IC is carried into a small universe -- an index of "
