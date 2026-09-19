@@ -300,6 +300,21 @@ MODES: Tuple[Mode, ...] = (
          "A new signal with an independent-sounding story.",
          "Correlation with something already in the book is above 0.9.",
          ("M3", "M4"), "Correlate against everything already in production first."),
+    Mode("screen-control-narrower-than-deployment", "null",
+         "the cheap screen controlled for less than the real competitor does",
+         "A cheap per-item marginal test says the candidate beats a matched random null "
+         "decisively -- p<1e-4, same sign in train and valid -- and the joint fit then shows nothing.",
+         "The screen residualised each candidate column against a handful of its own siblings; "
+         "the thing it has to beat in deployment is the whole library fitted jointly. Those are "
+         "different marginals, and passing the narrow one is a false positive for the wide one. "
+         "It is not spanning and not collinearity -- both can be measured and come back clean -- "
+         "the marginal edge is simply below the estimation noise of a fit that must place weight "
+         "on every added column. baseline-sees-fewer-inputs is the mirror image: there the "
+         "*baseline* is handicapped, here the *control set* is.",
+         ("M3",),
+         "State the control set the candidate must beat in deployment before designing the screen. "
+         "If the screen's control set is smaller, its verdict is advisory -- never a gate that ends "
+         "the study early on a pass. A pass means run the joint test; only a fail may stop it."),
     Mode("baseline-sees-fewer-inputs", "mech",
          "the baseline was given less information than the model",
          "A learned representation beats the textbook baseline on the same panel.",
@@ -440,7 +455,9 @@ MODES: Tuple[Mode, ...] = (
          "at a price nobody could have paid and every number downstream is computed on a book "
          "that was never available. In one published decomposition this single line cost 10.8 "
          "percentage points a year against a final 13.3 -- larger than cost, the liquidity "
-         "floor and the position cap together.",
+         "floor and the position cap together. The same absence blocks the exit: a name that "
+         "closes on its down limit cannot be sold at that close, and a book that marks it sold "
+         "there records a zero where the real path is the next day's fall.",
          ("E6",),
          "Remove the entries the book could not have taken -- do not charge more for them, "
          "remove them -- and fill the slots further down the ranking as a desk would."),
@@ -643,6 +660,22 @@ MODES: Tuple[Mode, ...] = (
          "It proves the two agree, not that either is right. A shared conceptual "
          "error survives every value-by-value check.",
          ("P5",), "Check against an external fact the pipeline never sees."),
+    Mode("mechanism-filter-inverts-the-sign", "mech",
+         "a mechanism-derived filter selects the losing half",
+         "A conditioning rule added to make the events 'purer' -- the price path the mechanism "
+         "says should precede the payoff -- turns a flat or mildly positive unconditioned effect "
+         "negative, and the complement cell (condition false) is where the return is.",
+         "The filter keys on a price move, and at this level a price move is a momentum signal "
+         "before it is a state of the mechanism: 'forced selling continued into the open' and "
+         "'the index is going down today' are the same observation, so the rule selects "
+         "continuation and calls it exhaustion. The mechanism's own state variable (who is "
+         "forced, how much is queued) was never measured -- it was proxied by the thing being "
+         "predicted.",
+         ("P6",),
+         "Run the complement cell (condition false) under the same holding rule before believing "
+         "the filter; if it carries the return, the filter is a sign flip, not a purifier. Then "
+         "replace the price condition with the mechanism's state variable (margin balance, "
+         "limit-hit queue) and see whether the sign survives."),
 )
 
 
